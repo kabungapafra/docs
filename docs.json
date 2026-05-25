@@ -3,10 +3,13 @@
   "name": "Save App",
   "theme": "luma",
   "favicon": "https://media.brand.dev/d9eec136-1b58-4560-8c2a-e122eba9a857.jpg",
+  "logo": {
+    "light": "/logo-light.png",
+    "dark": "/logo-dark.png"
+  },
   "colors": {
     "primary": "#0c64c4",
     "light": "#84b4dc"
-
   },
   "navigation": {
     "tabs": [
