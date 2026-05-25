@@ -1,0 +1,78 @@
+---
+title: "POST /api/members — Add a new member to your group"
+sidebarTitle: "Create Member"
+description: "Register a new member directly to your group as an admin. The member is created with a pending status and must complete onboarding to activate their account."
+---
+
+Admins use this endpoint to pre-register members before they log in for the first time. The new member is added to the same group as the authenticated admin with `status: "pending"` and `is_active: false`. A temporary PIN is set at creation time; the member then completes onboarding via `POST /api/auth/onboarding/set-password` to choose their own credentials and activate their account. No OTP verification is required from the admin side.
+
+## Request body
+
+<ParamField body="name" type="string" required>
+  Full name of the new member. Must be between 2 and 100 characters.
+</ParamField>
+
+<ParamField body="phone" type="string" required>
+  Uganda phone number in the format `+256XXXXXXXXX`. Must be unique — the request will fail if a user with this number already exists.
+</ParamField>
+
+<ParamField body="role" type="string" default="member">
+  Role to assign at creation. Accepted values are `"member"`, `"admin"`, and `"Administrator"`. Defaults to `"member"` if omitted.
+</ParamField>
+
+<ParamField body="password" type="string" default="1234">
+  Initial PIN for the member. Must be at least 4 digits if provided. This value is returned in the response `otp` field so you can communicate it to the member out-of-band. If omitted, the account is created without a usable PIN (`PENDING`) until the member sets one during onboarding.
+</ParamField>
+
+<ParamField body="otp" type="string">
+  Optional. Not used by the server during admin-initiated registration, but accepted for client compatibility.
+</ParamField>
+
+## Response
+
+<ResponseField name="success" type="boolean">
+  `true` when the member was created successfully.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable confirmation, e.g. `"Member created successfully"`.
+</ResponseField>
+
+<ResponseField name="otp" type="string">
+  The initial PIN that was set for the member (mirrors the `password` field you sent). Share this with the member so they can complete onboarding. Returns an empty string if no password was provided.
+</ResponseField>
+
+<Note>
+  The new member's account has `status: "pending"` and `is_active: false` until they complete the onboarding flow. Direct the member to the Save App onboarding screen where they call `POST /api/auth/onboarding/set-password` with their phone number and a new password of their choice. Only after that step is their account fully activated.
+</Note>
+
+<Tip>
+  Avoid using the default PIN `"1234"` in production. Pass a randomly generated numeric PIN as the `password` field, return it to the admin in your UI, and instruct them to share it with the member securely. The member is prompted to change it during onboarding regardless.
+</Tip>
+
+### Example
+
+<CodeGroup>
+
+```bash Create a member
+curl --request POST \
+  --url "https://api.saveapp.io/api/members" \
+  --header "Authorization: Bearer <admin_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "name": "David Ssemwogerere",
+    "phone": "+256772987654",
+    "role": "member",
+    "password": "8472"
+  }'
+```
+
+</CodeGroup>
+
+```json Response
+{
+  "success": true,
+  "message": "Member created successfully",
+  "otp": "8472"
+}
+```

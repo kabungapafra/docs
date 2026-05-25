@@ -1,0 +1,388 @@
+---
+title: "System Configuration: Tune Your Group's Financial Rules"
+sidebarTitle: "Settings"
+description: "Read or update your group's financial rules, credit score weights, cycle settings, and notification tokens through the system configuration API."
+---
+
+The system configuration API lets you read your group's current financial rules at any time without authentication, and update those rules as an admin with a single `PUT` request. Every field is optional on update — only the fields you include are changed, and the full updated configuration is returned immediately. Changes persist to the database and take effect across all connected devices without a restart.
+
+---
+
+## GET /api/config
+
+Returns the current system configuration. This endpoint is **public** — no authentication is required.
+
+<Note>
+  `GET /api/config` requires no `Authorization` header. You can call it from an unauthenticated client to display group settings on onboarding screens or public-facing pages.
+</Note>
+
+### Response
+
+See the full [SystemConfig fields](#systemconfig-fields) table below.
+
+<CodeGroup>
+
+```bash Get config
+curl --request GET \
+  --url "https://api.saveapp.io/api/config"
+```
+
+</CodeGroup>
+
+```json Sample response
+{
+  "loan_interest_rate": 10.0,
+  "max_loan_multiplier": 3.0,
+  "max_loan_limit": 5000000.0,
+  "payout_amount": 500000.0,
+  "retention_percentage": 10.0,
+  "late_penalty_rate": 0.5,
+  "contribution_amount": 50000.0,
+  "max_loan_duration": 12,
+  "weight_on_time_payment": 5,
+  "weight_late_payment": -10,
+  "weight_missed_payment": -20,
+  "weight_loan_repaid_on_time": 15,
+  "weight_loan_repaid_late": -5,
+  "weight_loan_defaulted": -50,
+  "weight_cycle_completed": 10,
+  "min_credit_score": 300,
+  "max_credit_score": 850,
+  "starting_credit_score": 500,
+  "frequency": "Monthly",
+  "recipients": 1,
+  "loan_late_fee": 50.0,
+  "start_date": "Oct 1, 2023",
+  "automatic_payouts": true,
+  "scheduled_contributions": true,
+  "smart_roundups": false,
+  "automated_cycle": true,
+  "loan_requests": true
+}
+```
+
+---
+
+## PUT /api/config
+
+Updates system configuration. Requires an **admin** JWT. Only the fields present in the request body are modified — omitted fields retain their current values. Returns the full updated `SystemConfig` object.
+
+<Tip>
+  To temporarily pause loan requests while your group resolves a funding shortfall, set `loan_requests` to `false`. This disables the loan request flow for all members without affecting any loans already in progress.
+</Tip>
+
+### Request body
+
+All fields are optional. Include only the fields you want to change.
+
+#### Financial rules
+
+<ParamField body="loan_interest_rate" type="float">
+  Annual interest rate applied to loans, expressed as a percentage. Must be between `0` and `100`.
+</ParamField>
+
+<ParamField body="max_loan_multiplier" type="float">
+  Maximum loan amount expressed as a multiple of the member's savings. For example, `3` means a member can borrow up to three times what they have contributed. Must be `>= 0`.
+</ParamField>
+
+<ParamField body="max_loan_limit" type="float">
+  Absolute maximum loan amount in UGX, regardless of savings multiplier. Must be `>= 0`.
+</ParamField>
+
+<ParamField body="payout_amount" type="float">
+  Maximum amount disbursed per payout execution, in UGX. Must be `>= 0`.
+</ParamField>
+
+<ParamField body="retention_percentage" type="float">
+  Percentage of the payout amount retained in the group fund rather than disbursed. Must be between `0` and `100`.
+</ParamField>
+
+<ParamField body="late_penalty_rate" type="float">
+  Daily penalty rate applied to overdue loan balances, expressed as a percentage. Must be `>= 0`.
+</ParamField>
+
+<ParamField body="contribution_amount" type="float">
+  Fixed contribution amount required from each member per cycle, in UGX. Must be `>= 0`.
+</ParamField>
+
+<ParamField body="max_loan_duration" type="integer">
+  Maximum loan term in months. Must be `>= 0`.
+</ParamField>
+
+#### Credit score weights
+
+These values are added to or subtracted from a member's credit score when the corresponding event occurs.
+
+<ParamField body="weight_on_time_payment" type="integer" default="5">
+  Points added when a contribution is made on time.
+</ParamField>
+
+<ParamField body="weight_late_payment" type="integer" default="-10">
+  Points added (negative) when a contribution is made after the due date.
+</ParamField>
+
+<ParamField body="weight_missed_payment" type="integer" default="-20">
+  Points added (negative) when a contribution is missed entirely.
+</ParamField>
+
+<ParamField body="weight_loan_repaid_on_time" type="integer" default="15">
+  Points added when a loan is fully repaid on or before the due date.
+</ParamField>
+
+<ParamField body="weight_loan_repaid_late" type="integer" default="-5">
+  Points added (negative) when a loan is repaid after the due date.
+</ParamField>
+
+<ParamField body="weight_loan_defaulted" type="integer" default="-50">
+  Points added (negative) when a loan is marked as defaulted.
+</ParamField>
+
+<ParamField body="weight_cycle_completed" type="integer" default="10">
+  Points added when a member completes a full group cycle.
+</ParamField>
+
+#### Credit score boundaries
+
+<ParamField body="min_credit_score" type="integer" default="300">
+  Floor value for the credit score. A score cannot fall below this number.
+</ParamField>
+
+<ParamField body="max_credit_score" type="integer" default="850">
+  Ceiling value for the credit score. A score cannot rise above this number.
+</ParamField>
+
+<ParamField body="starting_credit_score" type="integer" default="500">
+  Credit score assigned to every new member when their account is created.
+</ParamField>
+
+#### Cycle and chama settings
+
+<ParamField body="frequency" type="string" default="Monthly">
+  Contribution and payout cycle frequency (e.g., `"Monthly"`, `"Weekly"`).
+</ParamField>
+
+<ParamField body="recipients" type="integer" default="1">
+  Number of members who receive a payout per cycle execution.
+</ParamField>
+
+<ParamField body="loan_late_fee" type="float" default="50.0">
+  Fixed late fee charged per overdue loan repayment event, in UGX.
+</ParamField>
+
+<ParamField body="start_date" type="string" default="Oct 1, 2023">
+  The date the current cycle started, used as the reference point for scheduling. Accepts a human-readable date string (e.g., `"Jan 1, 2025"`).
+</ParamField>
+
+<ParamField body="automatic_payouts" type="boolean" default="true">
+  When `true`, payouts are executed automatically by the scheduler. When `false`, an admin must trigger each payout manually.
+</ParamField>
+
+<ParamField body="scheduled_contributions" type="boolean" default="true">
+  When `true`, the system sends reminders and tracks contribution due dates based on the configured `frequency` and `start_date`.
+</ParamField>
+
+<ParamField body="smart_roundups" type="boolean" default="false">
+  When `true`, member transactions are rounded up and the difference is added as a micro-contribution to the group fund.
+</ParamField>
+
+<ParamField body="automated_cycle" type="boolean" default="true">
+  When `true`, the system automatically advances the group to the next cycle when all conditions are met.
+</ParamField>
+
+<ParamField body="loan_requests" type="boolean" default="true">
+  When `true`, members can submit new loan requests. Set to `false` to pause the loan request flow for all members.
+</ParamField>
+
+### Response
+
+Returns the full updated `SystemConfig` object. See the sample response under [GET /api/config](#get-apiconfig).
+
+<CodeGroup>
+
+```bash Update interest rate and loan limit
+curl --request PUT \
+  --url "https://api.saveapp.io/api/config" \
+  --header "Authorization: Bearer <admin_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "loan_interest_rate": 12.5,
+    "max_loan_limit": 3000000.0
+  }'
+```
+
+```bash Pause loan requests
+curl --request PUT \
+  --url "https://api.saveapp.io/api/config" \
+  --header "Authorization: Bearer <admin_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "loan_requests": false
+  }'
+```
+
+```bash Adjust credit score weights
+curl --request PUT \
+  --url "https://api.saveapp.io/api/config" \
+  --header "Authorization: Bearer <admin_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "weight_on_time_payment": 8,
+    "weight_missed_payment": -25,
+    "weight_loan_defaulted": -60
+  }'
+```
+
+</CodeGroup>
+
+### Error responses
+
+| Status | Condition |
+|--------|-----------|
+| `400 Bad Request` | A field value is out of its valid range (e.g., `loan_interest_rate` outside 0–100, or a negative amount field). |
+| `401 Unauthorized` | No valid `Authorization` header was provided. |
+| `403 Forbidden` | The authenticated user does not have the `admin` role. |
+
+---
+
+## Notifications
+
+### GET /api/notifications
+
+Returns all notifications for the authenticated user, ordered by `created_at` descending. Requires authentication.
+
+#### Response
+
+Returns an array of `NotificationResponse` objects.
+
+<ResponseField name="id" type="string">
+  UUID of the notification.
+</ResponseField>
+
+<ResponseField name="title" type="string">
+  Short title of the notification.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Full notification body text.
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  Category of the notification (e.g., `"loan"`, `"contribution"`, `"payout"`).
+</ResponseField>
+
+<ResponseField name="is_read" type="boolean">
+  `true` if the user has read this notification.
+</ResponseField>
+
+<ResponseField name="created_at" type="datetime">
+  ISO 8601 timestamp of when the notification was created.
+</ResponseField>
+
+<CodeGroup>
+
+```bash List notifications
+curl --request GET \
+  --url "https://api.saveapp.io/api/notifications" \
+  --header "Authorization: Bearer <token>"
+```
+
+</CodeGroup>
+
+---
+
+### POST /api/notifications/{id}/read
+
+Marks a single notification as read. The notification must belong to the authenticated user. Returns `404` if the ID is not found or belongs to a different user.
+
+<ParamField path="id" type="string" required>
+  UUID of the notification to mark as read.
+</ParamField>
+
+#### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when the notification was successfully marked as read.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Confirmation message: `"Notification marked as read"`.
+</ResponseField>
+
+<CodeGroup>
+
+```bash Mark single notification read
+curl --request POST \
+  --url "https://api.saveapp.io/api/notifications/a1b2c3d4-e5f6-7890-abcd-ef1234567890/read" \
+  --header "Authorization: Bearer <token>"
+```
+
+</CodeGroup>
+
+---
+
+### POST /api/notifications/read-all
+
+Marks all unread notifications for the authenticated user as read in a single operation.
+
+#### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when all notifications were successfully updated.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Confirmation message: `"All notifications marked as read"`.
+</ResponseField>
+
+<CodeGroup>
+
+```bash Mark all notifications read
+curl --request POST \
+  --url "https://api.saveapp.io/api/notifications/read-all" \
+  --header "Authorization: Bearer <token>"
+```
+
+</CodeGroup>
+
+---
+
+### POST /api/notifications/update-token
+
+Registers or replaces the FCM (Firebase Cloud Messaging) push token for the authenticated user's device. Call this endpoint after obtaining a fresh token from the Firebase SDK — typically on app launch and whenever `onTokenRefresh` fires.
+
+#### Request body
+
+<ParamField body="token" type="string" required>
+  The FCM device token obtained from the Firebase SDK. Must be at least 1 character.
+</ParamField>
+
+#### Response
+
+<ResponseField name="success" type="boolean">
+  `true` when the token was saved successfully.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Confirmation message: `"FCM token updated successfully"`.
+</ResponseField>
+
+<CodeGroup>
+
+```bash Register FCM token
+curl --request POST \
+  --url "https://api.saveapp.io/api/notifications/update-token" \
+  --header "Authorization: Bearer <token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "token": "fXpN3k...FCM_TOKEN"
+  }'
+```
+
+</CodeGroup>
+
+```json Sample response (all notification endpoints)
+{
+  "success": true,
+  "message": "FCM token updated successfully"
+}
+```

@@ -1,0 +1,89 @@
+---
+title: "Save App Groups: Roles, Membership, and Permissions"
+description: "Understand how savings groups work in Save App, the difference between admins and members, and how new members join and become active participants."
+---
+
+A **group** in Save App is a named savings circle — a chama — where a set of people contribute money together over recurring cycles and take turns receiving payouts. Every account belongs to exactly one group, identified by a `group_name`. Within that group there are two distinct roles: **admin** and **member**. Understanding these roles and how member status works is essential before interacting with any other part of the API.
+
+## Roles
+
+| Role | What they can do |
+|------|-----------------|
+| `admin` | Start and end cycles, approve transactions, approve loans, approve payouts, add new members, promote/demote members, view credit score rankings, update system configuration |
+| `member` | View the current cycle, make contributions, request loans, check their own credit score, receive payouts |
+
+<Note>
+  **Unanimous approval required.** Loans, contribution transactions, and payouts each require approval from **all** admins currently in the group before they are executed. If your group has three admins, all three must approve before the operation proceeds.
+</Note>
+
+## The Group Creator
+
+The first admin to register a group becomes its **creator** (`is_creator: true`). The creator is a permanent role — it does not change when other admins are added or removed. Only the group creator can delete the group entirely.
+
+```json
+{
+  "name": "Alice Nakato",
+  "role": "admin",
+  "is_creator": true,
+  "group_name": "Kampala Savers",
+  "status": "active"
+}
+```
+
+## Member Status
+
+Every user record carries a `status` field that reflects where they are in the onboarding flow.
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | Added by an admin but has not yet completed onboarding (set their password via the app) |
+| `active` | Fully onboarded; can make contributions, receive payouts, and request loans |
+| `suspended` | Temporarily deactivated by an admin; `is_active` is `false` |
+
+Only `active` members are included in cycle payout queues and contribution counts.
+
+## How Members Join
+
+<Steps>
+  <Step title="Admin registers the new member">
+    An admin calls the member registration endpoint with the new person's name and phone number. The system creates the account in `pending` status and issues a one-time password (OTP) to the phone number.
+
+    ```json
+    {
+      "name": "John Ssebugwawo",
+      "phone": "+256701234567",
+      "role": "member"
+    }
+    ```
+  </Step>
+
+  <Step title="Admin shares the group name and phone number">
+    The admin communicates the group name to the new member out of band (SMS, WhatsApp, or in person). These are the two pieces of information the member needs to start onboarding.
+  </Step>
+
+  <Step title="New member sets a password">
+    Using the onboarding flow, the member calls `POST /api/auth/onboarding/check-phone` to confirm their account exists, then `POST /api/auth/onboarding/set-password` to choose a PIN. This transitions their `status` from `pending` to `active`.
+  </Step>
+
+  <Step title="Member is ready to participate">
+    Once `active`, the member appears in future payout queues, their contributions are tracked, and their credit score starts accumulating history.
+  </Step>
+</Steps>
+
+## Multi-Admin Support
+
+A group can have more than one admin. Additional admins are promoted from the member role by an existing admin (via the `PUT /api/members/{member_id}` endpoint with `role: "admin"`). Likewise, an admin can be demoted back to `member`. The group creator cannot be demoted.
+
+<AccordionGroup>
+  <Accordion title="What happens to pending approvals when a new admin is added?">
+    Pending approvals that were created before the new admin joined do not retroactively require the new admin's signature. Only approvals created after the promotion require all current admins to sign.
+  </Accordion>
+
+  <Accordion title="Can a member be in multiple groups?">
+    No. Each user account is scoped to a single `group_name`. To participate in two groups, a person would need two separate accounts with different phone numbers.
+  </Accordion>
+
+  <Accordion title="What does suspending a member do?">
+    Suspending sets `is_active` to `false`. The member cannot log in, is excluded from new cycle payout queues, and their contributions are not counted toward cycle completion checks. Their historical data is preserved.
+  </Accordion>
+</AccordionGroup>

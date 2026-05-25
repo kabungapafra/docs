@@ -1,0 +1,100 @@
+---
+title: "Check Loan Eligibility Before Submitting a Request"
+sidebarTitle: "Eligibility"
+description: "Verify whether you can borrow a given amount before submitting a loan request, and discover the maximum amount available to you based on your savings."
+---
+
+Before submitting a loan request, you can check whether you are eligible for a specific amount. The eligibility check evaluates your current savings balance and any existing loans to give you a clear picture of what you can borrow. This prevents failed submissions and helps you offer members an accurate loan request form.
+
+```
+POST /api/loans/check-eligibility
+```
+
+This endpoint is authenticated. It always evaluates the currently logged-in member — you cannot check eligibility on behalf of another member.
+
+<Tip>
+  Always call this endpoint before displaying the loan request form to your users. It tells you the maximum amount to allow in the form's amount field and surfaces any blocking conditions (such as an existing active loan) before the member fills out and submits the full request.
+</Tip>
+
+---
+
+## Request body
+
+<ParamField body="amount" type="number" required>
+  The loan amount you want to check. The API evaluates whether this specific amount is within your borrowing limit.
+</ParamField>
+
+<ParamField body="duration_months" type="number" required>
+  The intended repayment duration in months. Used alongside `amount` when assessing the request.
+</ParamField>
+
+---
+
+## Response fields
+
+<ResponseField name="is_eligible" type="boolean" required>
+  `true` if you can borrow the requested amount, `false` otherwise.
+</ResponseField>
+
+<ResponseField name="max_eligible_amount" type="number" required>
+  The maximum amount you are currently eligible to borrow. Calculated as your total contributions multiplied by the group's loan multiplier (typically 3×), capped at the group's configured maximum loan limit.
+</ResponseField>
+
+<ResponseField name="reason" type="string">
+  Present only when `is_eligible` is `false`. Explains why the request would be declined. Possible values:
+  - `"Member already has an active or pending loan."` — you must fully repay your existing loan before requesting a new one.
+  - `"Requested amount exceeds MAX eligibility of <amount> (3x Savings)."` — the amount you requested is higher than 3× your total contributions.
+</ResponseField>
+
+---
+
+## Example
+
+<CodeGroup>
+
+```bash Check eligibility
+curl --request POST \
+  --url 'https://api.saveapp.example.com/api/loans/check-eligibility' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "amount": 300000,
+    "duration_months": 6
+  }'
+```
+
+</CodeGroup>
+
+---
+
+## Sample responses
+
+**Eligible member**
+
+```json
+{
+  "is_eligible": true,
+  "max_eligible_amount": 450000,
+  "reason": null
+}
+```
+
+**Ineligible — existing active loan**
+
+```json
+{
+  "is_eligible": false,
+  "max_eligible_amount": 450000,
+  "reason": "Member already has an active or pending loan."
+}
+```
+
+**Ineligible — amount exceeds savings multiplier**
+
+```json
+{
+  "is_eligible": false,
+  "max_eligible_amount": 150000,
+  "reason": "Requested amount exceeds MAX eligibility of 150000 (3x Savings)."
+}
+```

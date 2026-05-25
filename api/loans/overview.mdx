@@ -1,0 +1,269 @@
+---
+title: "Loans API: Submit, Approve, and Track Loan Requests"
+sidebarTitle: "Loans Overview"
+description: "Submit loan requests, track their status through admin approval, and manage the full lifecycle from pending to completed or rejected."
+---
+
+The Save App loan system lets members request funds against their accumulated savings and gives admins the tools to review and act on those requests. Members can list their own loans and submit new requests, while admins see all loans across the group and can approve or reject pending ones.
+
+## Loan statuses
+
+A loan moves through the following statuses during its lifecycle:
+
+| Status | Meaning |
+|--------|---------|
+| `PENDING` | Submitted and awaiting admin approval |
+| `APPROVED` | All admins have approved; funds can be disbursed |
+| `ACTIVE` | Loan is currently being repaid |
+| `COMPLETED` | Fully repaid |
+| `REJECTED` | Declined by an admin |
+| `OVERDUE` | Active loan that has passed its due date |
+
+---
+
+## List loans
+
+Retrieve a paginated list of loans. Members only see their own loans; admins see all loans in the group. Filter by status using the `status` query parameter.
+
+```
+GET /api/loans
+```
+
+### Query parameters
+
+<ParamField query="status" type="string">
+  Filter loans by status. Accepted values: `pending`, `approved`, `active`, `completed`, `rejected`, `overdue`.
+</ParamField>
+
+<ParamField query="limit" type="number" default="20">
+  Number of loans to return per page. Minimum `1`, maximum `100`.
+</ParamField>
+
+<ParamField query="offset" type="number" default="0">
+  Number of loans to skip before returning results. Use with `limit` for pagination.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="data" type="object[]">
+  Array of loan objects matching the query.
+
+  <Expandable title="Loan object fields">
+    <ResponseField name="id" type="string" required>
+      Unique identifier for the loan.
+    </ResponseField>
+    <ResponseField name="memberName" type="string" required>
+      Full name of the member who requested the loan.
+    </ResponseField>
+    <ResponseField name="amount" type="number" required>
+      Principal loan amount.
+    </ResponseField>
+    <ResponseField name="interest" type="number" required>
+      Calculated interest amount based on the loan's rate and duration.
+    </ResponseField>
+    <ResponseField name="totalDue" type="number" required>
+      Total amount owed (principal plus interest).
+    </ResponseField>
+    <ResponseField name="repaidAmount" type="number" required>
+      Amount repaid so far.
+    </ResponseField>
+    <ResponseField name="status" type="string" required>
+      Current loan status. One of `PENDING`, `APPROVED`, `ACTIVE`, `COMPLETED`, `REJECTED`, `OVERDUE`.
+    </ResponseField>
+    <ResponseField name="dateRequested" type="string" required>
+      ISO 8601 timestamp of when the loan was submitted.
+    </ResponseField>
+    <ResponseField name="dueDate" type="string">
+      ISO 8601 timestamp of the repayment due date. Calculated as approximately 30 days × duration months from the request date.
+    </ResponseField>
+    <ResponseField name="reason" type="string">
+      The reason the member provided when submitting the request.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="total" type="number" required>
+  Total number of loans matching the query, before pagination.
+</ResponseField>
+
+<ResponseField name="limit" type="number" required>
+  The `limit` value applied to this response.
+</ResponseField>
+
+<ResponseField name="offset" type="number" required>
+  The `offset` value applied to this response.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash List all loans (admin)
+curl --request GET \
+  --url 'https://api.saveapp.example.com/api/loans?limit=20&offset=0' \
+  --header 'Authorization: Bearer <token>'
+```
+
+```bash Filter by status
+curl --request GET \
+  --url 'https://api.saveapp.example.com/api/loans?status=pending&limit=20&offset=0' \
+  --header 'Authorization: Bearer <token>'
+```
+
+</CodeGroup>
+
+---
+
+## Submit a loan request
+
+Submit a new loan request on behalf of a member. The requesting member must not have an existing active or pending loan, and the amount must not exceed their eligibility (3× total contributions).
+
+```
+POST /api/loans
+```
+
+### Request body
+
+<ParamField body="memberName" type="string" required>
+  Full name of the member requesting the loan. Must match an existing member record. Minimum 2 characters, maximum 100 characters.
+</ParamField>
+
+<ParamField body="amount" type="number" required>
+  Loan principal in the group's currency. Must be greater than `0` and must not exceed the member's maximum eligibility (3× their total contributions).
+</ParamField>
+
+<ParamField body="durationMonths" type="number" required>
+  Repayment duration in months. Minimum `1`, maximum `24`.
+</ParamField>
+
+<ParamField body="reason" type="string" required>
+  Purpose of the loan. Minimum 2 characters, maximum 200 characters.
+</ParamField>
+
+<ParamField body="guarantor" type="string">
+  Full name of the guarantor. Minimum 2 characters, maximum 100 characters.
+</ParamField>
+
+<ParamField body="guarantorPhone" type="string">
+  Ugandan phone number for the guarantor. Must match the pattern `^\+?256[0-9]{9}$`.
+</ParamField>
+
+<ParamField body="idempotency_key" type="string">
+  A unique key (maximum 100 characters) to make the request idempotent. If you submit a request with an `idempotency_key` that was already used, the API returns the original loan response instead of creating a duplicate.
+</ParamField>
+
+### Response
+
+Returns a [loan object](#response-fields) with `status: "PENDING"`.
+
+### Example
+
+<CodeGroup>
+
+```bash Submit a loan request
+curl --request POST \
+  --url 'https://api.saveapp.example.com/api/loans' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "memberName": "Jane Nakato",
+    "amount": 500000,
+    "durationMonths": 6,
+    "reason": "School fees for second term",
+    "guarantor": "David Ssemakula",
+    "guarantorPhone": "+256701234567",
+    "idempotency_key": "loan-req-2024-06-001"
+  }'
+```
+
+</CodeGroup>
+
+---
+
+## Approve a loan
+
+Record an admin's approval for a pending loan. Approval requires **unanimous consent** from all active admins in the group. Each admin must call this endpoint separately; the loan status changes to `ACTIVE` only after every admin has approved.
+
+```
+POST /api/loans/{id}/approve
+```
+
+<Note>
+  This endpoint is restricted to admin users. A loan remains in `PENDING` status until all active admins have approved it. The API response indicates how many approvals have been recorded so far (e.g., `2/3 admins have approved`).
+</Note>
+
+### Path parameters
+
+<ParamField path="id" type="string" required>
+  The unique identifier of the loan to approve.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean" required>
+  `true` when the approval was recorded successfully.
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  A human-readable message indicating either that approval is unanimous and the loan is now `ACTIVE`, or showing the running tally (e.g., `"2/3 admins have approved"`).
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Approve a loan
+curl --request POST \
+  --url 'https://api.saveapp.example.com/api/loans/loan_abc123/approve' \
+  --header 'Authorization: Bearer <admin_token>'
+```
+
+</CodeGroup>
+
+---
+
+## Reject a loan
+
+Reject a pending loan request. Only admins can reject loans. The rejection reason is appended to the loan's existing reason field for audit purposes.
+
+```
+POST /api/loans/{id}/reject
+```
+
+### Path parameters
+
+<ParamField path="id" type="string" required>
+  The unique identifier of the loan to reject.
+</ParamField>
+
+### Request body
+
+<ParamField body="reason" type="string" required>
+  Explanation for the rejection. Minimum 2 characters, maximum 200 characters. This is appended to the loan record as `[REJECTED: <reason>]`.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean" required>
+  `true` when the loan was rejected successfully.
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  Confirmation message, e.g. `"Loan rejected"`.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Reject a loan
+curl --request POST \
+  --url 'https://api.saveapp.example.com/api/loans/loan_abc123/reject' \
+  --header 'Authorization: Bearer <admin_token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "reason": "Insufficient guarantor information provided"
+  }'
+```
+
+</CodeGroup>

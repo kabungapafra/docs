@@ -1,0 +1,150 @@
+---
+title: "Member Credit Scores: Reliability and Payout Priority"
+description: "Learn how Save App calculates credit scores from payment behavior and loan history, and how those scores determine each member's position in the payout queue."
+---
+
+Every member in Save App has a **credit score** — a single number between 300 and 850 that reflects how reliably they contribute, repay loans, and complete cycles. New members start at 500. The score rises when members honor their commitments and falls when they miss payments or default on loans. At the moment a new cycle starts, the payout queue is built by sorting all members from highest score to lowest, so members who have consistently paid on time receive their payout earlier in the round.
+
+## Score Range and Starting Point
+
+| Attribute | Value |
+|-----------|-------|
+| Minimum score | 300 |
+| Maximum score | 850 |
+| Starting score for new members | 500 |
+
+These boundaries and the starting value are configurable by admins via `PUT /api/config` (`min_credit_score`, `max_credit_score`, `starting_credit_score`). Scores are clamped to the configured range — they can never go below the minimum or above the maximum.
+
+## How the Score is Calculated
+
+The score is computed from the starting value by applying a **weight** for each recorded event in the member's history:
+
+```
+score = starting_credit_score
+      + (on_time_payments        × weight_on_time_payment)
+      + (late_payments           × weight_late_payment)
+      + (missed_payments         × weight_missed_payment)
+      + (loans_repaid_on_time    × weight_loan_repaid_on_time)
+      + (loans_repaid_late       × weight_loan_repaid_late)
+      + (loans_defaulted         × weight_loan_defaulted)
+      + (cycles_completed        × weight_cycle_completed)
+
+score = clamp(score, min_credit_score, max_credit_score)
+```
+
+This formula is evaluated and re-run every time a relevant event is recorded for a member.
+
+## Score Impact Events
+
+| Event | Default weight | What triggers it |
+|-------|---------------|-----------------|
+| On-time contribution payment | **+5** | Contribution paid before or on `contribution_due_date` |
+| Late contribution payment | **−10** | Contribution paid after `contribution_due_date` |
+| Missed contribution payment | **−20** | Contribution not paid at all for a cycle |
+| Loan repaid on time | **+15** | Full loan repayment before `due_date` |
+| Loan repaid late | **−5** | Full loan repayment after `due_date` |
+| Loan defaulted | **−50** | Loan marked as overdue with no repayment |
+| Cycle completed | **+10** | Awarded to every member when an admin closes a cycle |
+
+<Tip>
+  Consistently repaying loans on time is the fastest way to improve your score. A single on-time loan repayment (+15) outweighs three on-time contribution payments (+15 total) in one event.
+</Tip>
+
+<Warning>
+  A loan default costs **−50 points** — the largest single negative event. At the default starting score of 500, two defaults would put a member at 400, placing them near the bottom of every payout queue until they rebuild their history.
+</Warning>
+
+## Reliability Labels
+
+The app also maps numeric scores to a human-readable reliability label used in the member dashboard:
+
+| Score range | Label | Color |
+|-------------|-------|-------|
+| 90 and above | SAFE | Green |
+| 75 – 89 | STABLE | Blue |
+| 60 – 74 | MODERATE | Orange |
+| Below 60 | AT RISK | Red |
+
+Members with a score below 60 are also ineligible for loans.
+
+## API Endpoints
+
+### View your own credit score
+
+`GET /api/credit-scores/me` — Any authenticated member
+
+Returns the full credit score record for the currently logged-in user.
+
+```json
+{
+  "member_id": "usr-abc123",
+  "member_name": "Grace Akello",
+  "score": 720.0,
+  "on_time_payments": 18,
+  "late_payments": 1,
+  "missed_payments": 0,
+  "loans_repaid_on_time": 2,
+  "loans_repaid_late": 0,
+  "loans_defaulted": 0,
+  "cycles_participated": 6,
+  "cycles_completed": 6,
+  "last_updated": "2025-06-15T08:42:11"
+}
+```
+
+### View all member rankings
+
+`GET /api/credit-scores/rankings` — **Admin only**
+
+Returns all active members sorted from highest score to lowest, along with their numeric rank. This is the same ordering used to build the payout queue when a new cycle starts.
+
+```json
+[
+  { "member_id": "usr-abc123", "member_name": "Grace Akello", "score": 720.0, "rank": 1 },
+  { "member_id": "usr-def456", "member_name": "Peter Okello",  "score": 655.0, "rank": 2 },
+  { "member_id": "usr-ghi789", "member_name": "Sarah Nambi",   "score": 500.0, "rank": 3 }
+]
+```
+
+### View a specific member's credit score
+
+`GET /api/credit-scores/{member_id}` — **Admin only**
+
+Returns the full credit score record for any member by their ID. Useful for investigating a specific member's history before approving a loan.
+
+## CreditScoreResponse Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `member_id` | string | The member's unique identifier |
+| `member_name` | string | The member's display name |
+| `score` | float | Current calculated score (300–850) |
+| `on_time_payments` | integer | Count of on-time contribution payments |
+| `late_payments` | integer | Count of late contribution payments |
+| `missed_payments` | integer | Count of missed contribution payments |
+| `loans_repaid_on_time` | integer | Count of loans fully repaid before due date |
+| `loans_repaid_late` | integer | Count of loans fully repaid after due date |
+| `loans_defaulted` | integer | Count of loans that defaulted |
+| `cycles_participated` | integer | Total cycles the member has been enrolled in |
+| `cycles_completed` | integer | Cycles successfully completed (all payouts received) |
+| `last_updated` | datetime | When the score was last recalculated |
+
+## Configuring Score Weights
+
+Admins can adjust any weight via `PUT /api/config`. All weight fields are optional — only the fields you include are changed.
+
+```json
+{
+  "weight_on_time_payment": 5,
+  "weight_late_payment": -10,
+  "weight_missed_payment": -20,
+  "weight_loan_repaid_on_time": 15,
+  "weight_loan_repaid_late": -5,
+  "weight_loan_defaulted": -50,
+  "weight_cycle_completed": 10
+}
+```
+
+<Note>
+  Weight changes take effect on the **next** score recalculation event. Existing scores are not retroactively adjusted until a new payment, loan event, or cycle completion is recorded for a member.
+</Note>

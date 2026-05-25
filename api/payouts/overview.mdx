@@ -1,0 +1,250 @@
+---
+title: "Payouts API: Initiate and Approve Fund Distributions"
+sidebarTitle: "Payouts"
+description: "Initiate and approve fund distributions to members. Payouts require unanimous admin approval and apply the configured retention percentage before disbursement."
+---
+
+The Payouts API handles the distribution of group funds to members. Only admins can initiate and approve payouts. Every payout is created with a `PENDING` status and is executed only after all active admins have approved it. When a payout executes, the group balance is debited, the configured retention percentage is kept in the group fund, and the member receives a push notification.
+
+---
+
+## Get the payout queue
+
+<Tip>
+  For an ordered queue that respects each member's credit score, use `GET /api/cycles/{cycle_id}/queue` instead. That endpoint returns the `PayoutQueue` for a specific cycle, where members are ranked by their `credit_score_at_generation` and assigned a sequential position. This ensures fairer, score-based ordering rather than sorting only by total contributions paid.
+</Tip>
+
+Return a list of members who are currently eligible to receive a payout. This endpoint is restricted to admins.
+
+**`GET /api/payouts/queue`**
+
+A member appears in this list when all three conditions are true:
+
+- `role` is `member`
+- `has_received_payout` is `false`
+- `is_active` is `true`
+
+Results are ordered by `contribution_paid` descending — members who have contributed the most appear first.
+
+### Response
+
+Returns an array of `MemberEntity` objects.
+
+<ResponseField name="id" type="string" required>
+  Unique member identifier.
+</ResponseField>
+<ResponseField name="name" type="string" required>
+  Member's full name.
+</ResponseField>
+<ResponseField name="phone" type="string" required>
+  Member's phone number in Uganda format (`+256XXXXXXXXX`).
+</ResponseField>
+<ResponseField name="role" type="string" required>
+  Always `member` for records in this list.
+</ResponseField>
+<ResponseField name="contribution_paid" type="number" required>
+  Total amount this member has contributed so far.
+</ResponseField>
+<ResponseField name="shortfall_amount" type="number" required>
+  Outstanding shortfall amount for this member.
+</ResponseField>
+<ResponseField name="has_received_payout" type="boolean" required>
+  Always `false` for records in this list.
+</ResponseField>
+<ResponseField name="is_active" type="boolean" required>
+  Always `true` for records in this list.
+</ResponseField>
+<ResponseField name="credit_score" type="integer" required>
+  Member's current credit score (range 300–850, starting value 500).
+</ResponseField>
+<ResponseField name="reliability_label" type="string" required>
+  Human-readable eligibility label, e.g. `"ELIGIBLE"`.
+</ResponseField>
+<ResponseField name="is_eligible" type="boolean" required>
+  Whether the member is eligible for a payout.
+</ResponseField>
+<ResponseField name="created_at" type="string" required>
+  ISO 8601 datetime when the member account was created.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Get payout queue
+curl --request GET \
+  --url "https://api.saveapp.example/api/payouts/queue" \
+  --header "Authorization: Bearer <token>"
+```
+
+</CodeGroup>
+
+---
+
+## Get cycle payout queue
+
+Retrieve the ordered payout queue for a specific cycle. Members are ranked by their credit score at the time the queue was generated.
+
+**`GET /api/cycles/{cycle_id}/queue`**
+
+### Path parameters
+
+<ParamField path="cycle_id" type="string" required>
+  The UUID of the cycle whose queue you want to retrieve.
+</ParamField>
+
+### Response
+
+Returns an array of `PayoutQueueResponse` objects ordered by `position`.
+
+<ResponseField name="id" type="string" required>
+  Queue entry identifier.
+</ResponseField>
+<ResponseField name="member_name" type="string" required>
+  Display name of the member.
+</ResponseField>
+<ResponseField name="position" type="integer" required>
+  1-indexed position in the payout queue for this cycle.
+</ResponseField>
+<ResponseField name="credit_score_at_generation" type="number">
+  The member's credit score at the time the queue was generated.
+</ResponseField>
+<ResponseField name="has_received_payout" type="boolean" required>
+  Whether this member has already been paid out in this cycle.
+</ResponseField>
+<ResponseField name="payout_date" type="string">
+  Scheduled payout date for this position, if set.
+</ResponseField>
+<ResponseField name="actual_payout_date" type="string">
+  The date the payout was actually executed, once completed.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Get cycle queue
+curl --request GET \
+  --url "https://api.saveapp.example/api/cycles/cyc_xyz789/queue" \
+  --header "Authorization: Bearer <token>"
+```
+
+</CodeGroup>
+
+---
+
+## Initiate a payout
+
+Create a payout for a member. Admin only. The payout is saved in `PENDING` status and requires unanimous admin approval before funds are moved. A retention amount is automatically withheld based on the `retention_percentage` in the system configuration.
+
+**`POST /api/payouts`**
+
+<Note>
+  If the group balance is insufficient to cover the requested amount, the API returns a `400` error that includes the exact shortfall: `"Insufficient group balance. Need {shortfall} more"`. Resolve the shortfall by collecting additional contributions before retrying.
+</Note>
+
+### Request body
+
+<ParamField body="memberPhone" type="string" required>
+  Member's phone number in Uganda format (`+256XXXXXXXXX` or `256XXXXXXXXX`). Used to look up the recipient.
+</ParamField>
+
+<ParamField body="amount" type="number" required>
+  Gross payout amount. Must be greater than `0` and must not exceed the `payout_amount` value in the system configuration. The net amount disbursed to the member will be lower after the retention percentage is applied.
+</ParamField>
+
+<ParamField body="deferRemaining" type="boolean" default="false">
+  When `true`, any amount that cannot be paid immediately is deferred rather than cancelled.
+</ParamField>
+
+<ParamField body="idempotency_key" type="string">
+  A unique string (max 100 characters) you generate per request. If a payout with this key already exists, the server returns `{"success": true, "message": "Payout initiated. Awaiting approval."}` without creating a duplicate.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean" required>
+  `true` when the payout record was created successfully.
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  `"Payout initiated. Awaiting approval."` on success.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Initiate a payout
+curl --request POST \
+  --url "https://api.saveapp.example/api/payouts" \
+  --header "Authorization: Bearer <token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "memberPhone": "+256701234567",
+    "amount": 500000,
+    "deferRemaining": false,
+    "idempotency_key": "payout-jane-cycle-3"
+  }'
+```
+
+</CodeGroup>
+
+---
+
+## Approve a payout
+
+Submit an admin's approval for a pending payout. Admin only. The system requires **unanimous approval** — the payout executes only once every active admin has approved it.
+
+**`POST /api/payouts/{id}/approve`**
+
+When unanimous approval is reached:
+
+1. The group balance is debited by the gross payout amount.
+2. The configured `retention_percentage` is kept in the group fund (`retention_amount` is stored on the payout record).
+3. The member's `has_received_payout` flag is set to `true`.
+4. A push notification is sent to the member.
+
+The response message includes the current approval count so you can track progress: `"Approval recorded. {count}/{total} admins have approved."`
+
+### Path parameters
+
+<ParamField path="id" type="string" required>
+  The UUID of the payout to approve.
+</ParamField>
+
+### Request body
+
+<ParamField body="adminEmail" type="string" required>
+  Email address of the admin submitting this approval (2–100 characters).
+</ParamField>
+
+<ParamField body="txId" type="string">
+  Optional external transaction reference ID for audit purposes.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean" required>
+  `true` when the approval was recorded.
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  `"Payout approved unanimously by all {n} admins and has been executed."` when unanimous, or `"Approval recorded. {count}/{total} admins have approved."` when more approvals are still needed.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Approve a payout
+curl --request POST \
+  --url "https://api.saveapp.example/api/payouts/pay_d4e5f6g7/approve" \
+  --header "Authorization: Bearer <token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "adminEmail": "admin@savegroup.ug"
+  }'
+```
+
+</CodeGroup>

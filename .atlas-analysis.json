@@ -1,0 +1,141 @@
+{
+  "projectType": "api-service",
+  "projectName": "Save App",
+  "projectDescription": "A mobile savings group (chama) management platform with contributions, loans, payouts, and credit scoring for member groups.",
+  "theme": "luma",
+  "primaryColor": "#0c64c4",
+  "lightColor": "#84b4dc",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "authentication"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/groups",
+              "concepts/cycles",
+              "concepts/credit-scores"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/managing-members",
+              "guides/loans",
+              "guides/transactions",
+              "guides/payouts"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Auth",
+            "pages": [
+              "api/auth/login",
+              "api/auth/register",
+              "api/auth/password"
+            ]
+          },
+          {
+            "group": "Members",
+            "pages": [
+              "api/members/list",
+              "api/members/create",
+              "api/members/update"
+            ]
+          },
+          {
+            "group": "Loans",
+            "pages": [
+              "api/loans/overview",
+              "api/loans/eligibility",
+              "api/loans/repayment"
+            ]
+          },
+          {
+            "group": "Transactions & Payouts",
+            "pages": [
+              "api/transactions/overview",
+              "api/payouts/overview"
+            ]
+          },
+          {
+            "group": "Analytics & Config",
+            "pages": [
+              "api/analytics/dashboard",
+              "api/config/settings"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "JWT-based authentication with Firebase Phone Auth support",
+    "Group-based savings management (chama/savings circle)",
+    "Contribution tracking with credit score impact",
+    "Loan requests with eligibility checks (3x savings rule)",
+    "Multi-admin unanimous approval workflow for loans, transactions, and payouts",
+    "Automated payout queue ordered by member credit scores",
+    "Savings cycle management with contribution due dates",
+    "Push notifications via Firebase Cloud Messaging",
+    "Configurable financial rules (interest rates, loan limits, retention)",
+    "Audit logging for all admin actions"
+  ],
+  "publicApiSurface": [
+    "POST /api/auth/login",
+    "POST /api/auth/firebase-login",
+    "POST /api/auth/admin/verify-otp",
+    "POST /api/auth/change-password",
+    "POST /api/auth/reset-password",
+    "POST /api/auth/onboarding/check-phone",
+    "POST /api/auth/onboarding/set-password",
+    "GET /api/members",
+    "POST /api/members",
+    "GET /api/members/{id}",
+    "PUT /api/members/{id}",
+    "GET /api/loans",
+    "POST /api/loans",
+    "POST /api/loans/{id}/approve",
+    "POST /api/loans/{id}/reject",
+    "POST /api/loans/{id}/repay",
+    "POST /api/loans/check-eligibility",
+    "POST /api/loans/repayment-schedule",
+    "GET /api/transactions",
+    "POST /api/transactions",
+    "POST /api/transactions/{id}/approve",
+    "GET /api/payouts/queue",
+    "POST /api/payouts",
+    "POST /api/payouts/{id}/approve",
+    "GET /api/analytics/dashboard",
+    "GET /api/analytics/summary",
+    "GET /api/analytics/reports",
+    "GET /api/cycles/current",
+    "POST /api/cycles/start",
+    "GET /api/cycles/{cycle_id}/queue",
+    "GET /api/cycles/{cycle_id}/statistics",
+    "POST /api/cycles/{cycle_id}/end",
+    "GET /api/credit-scores/me",
+    "GET /api/credit-scores/rankings",
+    "GET /api/notifications",
+    "POST /api/notifications/{id}/read",
+    "POST /api/notifications/update-token",
+    "GET /api/config",
+    "PUT /api/config",
+    "GET /api/audit-logs",
+    "DELETE /api/groups"
+  ]
+}

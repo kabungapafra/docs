@@ -1,0 +1,107 @@
+---
+title: "PUT /api/members/{id} — Update a member's role or status"
+sidebarTitle: "Update Member"
+description: "Promote or demote a member's role, or suspend and reactivate their account. Role changes are restricted to the group creator. Returns the updated MemberEntity."
+---
+
+Use this endpoint to change a member's role within the group or to toggle their active status. Only an admin JWT may call this endpoint; role promotions and demotions are further restricted to the group **creator**. The response is the full updated `MemberEntity` object — the same shape returned by [List Members](/api/members/list).
+
+## Path parameters
+
+<ParamField path="id" type="string" required>
+  UUID of the member to update.
+</ParamField>
+
+## Request body
+
+All fields are optional. Send only the fields you want to change.
+
+<ParamField body="role" type="string">
+  New role for the member. Pass `"admin"` or `"Administrator"` to promote; pass `"member"` (or any other value) to demote. **Only the group creator may update this field** — other admins will receive a `403` error.
+</ParamField>
+
+<ParamField body="is_active" type="boolean">
+  Set to `false` to suspend the member (they will be unable to log in). Set to `true` to reactivate a suspended account.
+</ParamField>
+
+## Response
+
+Returns the updated `MemberEntity`. See [List Members](/api/members/list#memberentity-fields) for the full field reference.
+
+### Examples
+
+<CodeGroup>
+
+```bash Promote a member to admin
+curl --request PUT \
+  --url "https://api.saveapp.io/api/members/3fa85f64-5717-4562-b3fc-2c963f66afa6" \
+  --header "Authorization: Bearer <creator_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "role": "admin"
+  }'
+```
+
+```bash Suspend a member
+curl --request PUT \
+  --url "https://api.saveapp.io/api/members/3fa85f64-5717-4562-b3fc-2c963f66afa6" \
+  --header "Authorization: Bearer <admin_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "is_active": false
+  }'
+```
+
+```bash Reactivate a suspended member
+curl --request PUT \
+  --url "https://api.saveapp.io/api/members/3fa85f64-5717-4562-b3fc-2c963f66afa6" \
+  --header "Authorization: Bearer <admin_token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "is_active": true
+  }'
+```
+
+</CodeGroup>
+
+---
+
+## Delete the entire group
+
+```
+DELETE /api/groups
+```
+
+Permanently deletes the authenticated user's group and every record associated with it. This action is restricted to the **group creator** and cannot be undone.
+
+The following data is deleted in full:
+
+- All member accounts in the group
+- All transactions
+- All loans and repayment schedules
+- All payouts and payout queue entries
+- All approval records
+- All credit scores
+- All notifications
+- All audit logs
+
+<Warning>
+  Deleting the group is **irreversible**. All members, loans, transactions, payouts, and audit history are permanently removed from the database. There is no soft-delete or recovery mechanism. Ensure you have exported any records you need before calling this endpoint.
+</Warning>
+
+<CodeGroup>
+
+```bash Delete the group
+curl --request DELETE \
+  --url "https://api.saveapp.io/api/groups" \
+  --header "Authorization: Bearer <creator_token>"
+```
+
+</CodeGroup>
+
+```json Response
+{
+  "success": true,
+  "message": "Group 'Kampala Savers' and all its data have been deleted successfully."
+}
+```

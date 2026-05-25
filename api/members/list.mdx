@@ -1,0 +1,149 @@
+---
+title: "List and Retrieve Group Members via the Save App API"
+sidebarTitle: "List Members"
+description: "Retrieve a paginated list of all members in your group, or fetch a single member by ID. Each object includes credit score and loan eligibility data."
+---
+
+The List Members endpoints return `MemberEntity` objects for every non-deleted user in the authenticated user's group. Results are ordered by role then name, and credit scores are resolved server-side — your client receives a pre-calculated `reliability_label`, `reliability_color`, and `is_eligible` flag with every record. An admin JWT is required to list all members; regular members may only retrieve their own profile via the single-member endpoint.
+
+## List all members
+
+<ParamField query="limit" type="integer" default={20}>
+  Maximum number of members to return. Must be between `1` and `100`.
+</ParamField>
+
+<ParamField query="offset" type="integer" default={0}>
+  Zero-based index of the first record to return. Use with `limit` for pagination.
+</ParamField>
+
+### Response
+
+The response is wrapped in a `PaginatedResponse` envelope.
+
+<ResponseField name="data" type="MemberEntity[]">
+  Array of member objects for the current page.
+</ResponseField>
+
+<ResponseField name="total" type="integer">
+  Total number of members in the group (across all pages).
+</ResponseField>
+
+<ResponseField name="limit" type="integer">
+  The `limit` value that was applied to this request.
+</ResponseField>
+
+<ResponseField name="offset" type="integer">
+  The `offset` value that was applied to this request.
+</ResponseField>
+
+### MemberEntity fields
+
+<ResponseField name="id" type="string">
+  UUID that uniquely identifies the member.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Full display name of the member.
+</ResponseField>
+
+<ResponseField name="phone" type="string">
+  Phone number in Uganda format, e.g. `+256700123456`.
+</ResponseField>
+
+<ResponseField name="role" type="string">
+  Either `"admin"` or `"member"`.
+</ResponseField>
+
+<ResponseField name="group_name" type="string">
+  Name of the savings group this member belongs to.
+</ResponseField>
+
+<ResponseField name="contribution_paid" type="float">
+  Total contributions the member has made to the group, in UGX.
+</ResponseField>
+
+<ResponseField name="shortfall_amount" type="float">
+  Outstanding contribution shortfall, in UGX. `0.0` if the member is up to date.
+</ResponseField>
+
+<ResponseField name="has_received_payout" type="boolean">
+  `true` if the member has already received a payout in the current cycle.
+</ResponseField>
+
+<ResponseField name="is_active" type="boolean">
+  `true` if the member account is active. `false` if suspended.
+</ResponseField>
+
+<ResponseField name="is_creator" type="boolean">
+  `true` if this member is the original creator of the group.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Account status: `"active"` or `"pending"`. New members created by an admin start as `"pending"` until they complete onboarding.
+</ResponseField>
+
+<ResponseField name="created_at" type="datetime">
+  ISO 8601 timestamp of when the member record was created.
+</ResponseField>
+
+<ResponseField name="reliability_label" type="string">
+  Human-readable reliability classification calculated from the credit score, e.g. `"ELIGIBLE"`.
+</ResponseField>
+
+<ResponseField name="reliability_color" type="string">
+  Hex color code corresponding to the reliability label, e.g. `"#10B981"`. Use this to colour-code member cards in your UI.
+</ResponseField>
+
+<ResponseField name="is_eligible" type="boolean">
+  `true` if the member currently qualifies for a loan based on their credit score and group standing.
+</ResponseField>
+
+<ResponseField name="credit_score" type="integer">
+  Numeric credit score. The scale runs from `300` (minimum) to `850` (maximum), with new members starting at `500`.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash List all members
+curl --request GET \
+  --url "https://api.saveapp.io/api/members?limit=20&offset=0" \
+  --header "Authorization: Bearer <admin_token>"
+```
+
+```bash Get a single member
+curl --request GET \
+  --url "https://api.saveapp.io/api/members/3fa85f64-5717-4562-b3fc-2c963f66afa6" \
+  --header "Authorization: Bearer <token>"
+```
+
+</CodeGroup>
+
+```json Sample response (list)
+{
+  "data": [
+    {
+      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "name": "Aisha Nakato",
+      "phone": "+256700123456",
+      "role": "admin",
+      "group_name": "Kampala Savers",
+      "contribution_paid": 450000.0,
+      "shortfall_amount": 0.0,
+      "has_received_payout": false,
+      "is_active": true,
+      "is_creator": true,
+      "status": "active",
+      "created_at": "2024-01-15T08:30:00Z",
+      "reliability_label": "ELIGIBLE",
+      "reliability_color": "#10B981",
+      "is_eligible": true,
+      "credit_score": 720
+    }
+  ],
+  "total": 1,
+  "limit": 20,
+  "offset": 0
+}
+```

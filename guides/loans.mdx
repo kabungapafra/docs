@@ -1,0 +1,204 @@
+---
+title: "How to Request, Approve, and Repay Loans in Save App"
+description: "Check loan eligibility, generate repayment schedules, submit loan requests, track approval status, and record repayments against active loans."
+---
+
+Save App gives every member access to short-term loans backed by their own contribution history. The loan amount a member can borrow is capped at three times their total approved contributions, so the more consistently a member contributes, the more they can access. All loan requests are created in `PENDING` status and become `ACTIVE` only after every admin in the group approves them.
+
+<Warning>
+  A member can only hold one active loan at a time. A loan is considered active when its status is `PENDING`, `APPROVED`, or `ACTIVE`. Any new loan request from a member with an existing active loan will be rejected immediately.
+</Warning>
+
+## Check loan eligibility
+
+Before showing a loan request form, call this endpoint to confirm the member is eligible and to learn the maximum amount they can borrow.
+
+```bash
+curl -X POST https://api.saveapp.co/api/loans/check-eligibility \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount": 300000,
+    "duration_months": 3
+  }'
+```
+
+**Response**
+
+```json
+{
+  "is_eligible": true,
+  "max_eligible_amount": 450000.0,
+  "reason": null
+}
+```
+
+If the member already has an active loan, `is_eligible` will be `false` and `reason` will explain why. The `max_eligible_amount` is always returned so you can display it in your UI regardless of eligibility.
+
+<Info>
+  Eligibility is calculated as: `max_eligible_amount = contribution_paid × 3`, capped at the group's configured `max_loan_limit`. A member also needs a credit score of at least 60 to be eligible.
+</Info>
+
+## Generate a repayment schedule
+
+Let members preview exactly what they will owe each month before committing to a loan.
+
+```bash
+curl -X POST https://api.saveapp.co/api/loans/repayment-schedule \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount": 300000,
+    "duration_months": 3
+  }'
+```
+
+**Response**
+
+```json
+{
+  "total_repayment": 303750.0,
+  "monthly_installment": 101250.0,
+  "interest_amount": 3750.0,
+  "schedule": [
+    { "month": 1, "due_date": "2025-02-10T00:00:00Z", "amount": 101250.0 },
+    { "month": 2, "due_date": "2025-03-12T00:00:00Z", "amount": 101250.0 },
+    { "month": 3, "due_date": "2025-04-11T00:00:00Z", "amount": 101250.0 }
+  ]
+}
+```
+
+Interest is calculated as: `interest = principal × (rate / 100) × (duration_months / 12)`. The default interest rate is **5% per annum**.
+
+## Submit a loan request
+
+Once the member has reviewed the schedule and confirmed their intent, submit the loan request. The `memberName` must exactly match a registered member's name.
+
+```bash
+curl -X POST https://api.saveapp.co/api/loans \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "memberName": "Amara Nakato",
+    "amount": 300000,
+    "durationMonths": 3,
+    "guarantor": "David Ochieng",
+    "guarantorPhone": "+256782345678",
+    "reason": "School fees payment for Q2 term",
+    "idempotency_key": "loan-amara-20250110-001"
+  }'
+```
+
+**Response**
+
+```json
+{
+  "id": "b3c4d5e6-f7a8-9012-bcde-f34567890123",
+  "memberName": "Amara Nakato",
+  "amount": 300000.0,
+  "interest": 3750.0,
+  "totalDue": 303750.0,
+  "repaidAmount": 0.0,
+  "status": "PENDING",
+  "dateRequested": "2025-01-10T09:00:00Z",
+  "dueDate": "2025-04-10T09:00:00Z",
+  "reason": "School fees payment for Q2 term"
+}
+```
+
+<Tip>
+  Pass a unique `idempotency_key` (for example, combining the member name, date, and a counter) when submitting loans from a mobile app. If the network fails and you retry, the API will return the original loan record instead of creating a duplicate.
+</Tip>
+
+`guarantor` and `guarantorPhone` are optional but recommended for larger loan amounts.
+
+## View loans
+
+Retrieve loans with an optional status filter. Members only see their own loans; admins see all loans in the group.
+
+<CodeGroup>
+```bash All loans
+curl "https://api.saveapp.co/api/loans?limit=20&offset=0" \
+  -H "Authorization: Bearer <token>"
+```
+
+```bash Pending loans only
+curl "https://api.saveapp.co/api/loans?status=pending&limit=20&offset=0" \
+  -H "Authorization: Bearer <token>"
+```
+
+```bash Active loans only
+curl "https://api.saveapp.co/api/loans?status=active&limit=20&offset=0" \
+  -H "Authorization: Bearer <token>"
+```
+</CodeGroup>
+
+Valid `status` filter values: `pending`, `approved`, `active`, `completed`, `overdue`, `rejected`.
+
+## Loan lifecycle
+
+Every loan moves through a defined set of statuses:
+
+```
+PENDING → APPROVED → ACTIVE → COMPLETED
+                ↘ REJECTED
+                              ↘ OVERDUE
+```
+
+| Status | Meaning |
+|---|---|
+| `PENDING` | Submitted, waiting for all admins to approve |
+| `APPROVED` | All admins have approved; funds can be disbursed |
+| `ACTIVE` | Disbursed and currently being repaid |
+| `COMPLETED` | Fully repaid |
+| `OVERDUE` | Past the due date with an outstanding balance |
+| `REJECTED` | Declined by an admin |
+
+<Info>
+  Loan approval requires **unanimous consent** from all active admins in the group. Each admin calls `POST /api/loans/{id}/approve` independently. The API responds with progress (`2/3 admins have approved`) until the final admin's vote triggers the status change to `ACTIVE`.
+</Info>
+
+## Repay a loan
+
+Record a repayment against an active, approved, or overdue loan. Partial repayments are allowed — the loan moves to `COMPLETED` only once `repaidAmount >= totalDue`.
+
+```bash
+curl -X POST "https://api.saveapp.co/api/loans/b3c4d5e6-f7a8-9012-bcde-f34567890123/repay" \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount": 101250,
+    "paymentMethod": "mobile_money",
+    "phoneNumber": "+256701234567"
+  }'
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "message": "Loan repayment recorded"
+}
+```
+
+`phoneNumber` is optional and is recorded for mobile money transactions for reconciliation purposes. `paymentMethod` is a free-form string — common values used by Save App groups include `"mobile_money"` and `"cash"`.
+
+<Warning>
+  You cannot repay more than the remaining outstanding balance (`totalDue - repaidAmount`). The API will return a `400` error if the repayment amount exceeds the balance.
+</Warning>
+
+## LoanResponse fields
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Unique loan UUID |
+| `memberName` | string | Name of the borrowing member |
+| `amount` | float | Principal loan amount |
+| `interest` | float | Total interest charged |
+| `totalDue` | float | Principal + interest |
+| `repaidAmount` | float | Amount repaid so far |
+| `status` | string | Current loan status |
+| `dateRequested` | datetime | When the loan was submitted |
+| `dueDate` | datetime | Repayment deadline |
+| `reason` | string | Member-provided reason for the loan |

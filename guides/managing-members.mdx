@@ -1,0 +1,216 @@
+---
+title: "Add, Update, and Manage Members in a Save App Group"
+description: "Register, list, update, and suspend members in your Save App savings group. Covers the admin workflow and the member self-service onboarding flow."
+---
+
+Members are the foundation of every savings group in Save App. As an admin, you can add new members by phone number, assign roles, and control access at any time. Each member gets a credit score, reliability label, and eligibility status calculated automatically by the server so your app always has up-to-date data without any extra work.
+
+<Note>
+  All phone numbers must be in Uganda format. Accepted patterns are `+256XXXXXXXXX` (international) or `0XXXXXXXXX` (local). The API will reject any phone number that does not match these formats.
+</Note>
+
+## Add a new member
+
+Admins create members directly — no OTP flow is required on the admin side. If you do not supply an initial password, the account is placed in `pending` status and the member must set their own password before they can log in.
+
+```bash
+curl -X POST https://api.saveapp.io/api/members \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Amara Nakato",
+    "phone": "+256701234567",
+    "role": "Member",
+    "password": "1234"
+  }'
+```
+
+**Response**
+
+```json
+{
+  "success": true,
+  "message": "Member created successfully",
+  "otp": "1234"
+}
+```
+
+The `role` field accepts `"Member"`, `"Admin"`, or `"Administrator"`. Omitting `password` (or passing an empty string) leaves the account in `pending` state — see the [onboarding flow](#member-onboarding-flow) below.
+
+## List all members
+
+Any authenticated user can call this endpoint; members will only see themselves, while admins see the full group roster. Results are paginated.
+
+```bash
+curl "https://api.saveapp.io/api/members?limit=20&offset=0" \
+  -H "Authorization: Bearer <token>"
+```
+
+**Response**
+
+```json
+{
+  "data": [
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Amara Nakato",
+      "phone": "+256701234567",
+      "role": "member",
+      "group_name": "Kampala Savers",
+      "contribution_paid": 150000.0,
+      "shortfall_amount": 0.0,
+      "has_received_payout": false,
+      "is_active": true,
+      "is_creator": false,
+      "status": "active",
+      "created_at": "2025-01-10T08:00:00Z",
+      "reliability_label": "STABLE",
+      "reliability_color": "#3B82F6",
+      "is_eligible": true,
+      "credit_score": 720
+    }
+  ],
+  "total": 1,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+Use `limit` (1–100) and `offset` to page through large groups.
+
+## Get a single member
+
+Members may fetch their own profile. Admins can fetch any member in the same group.
+
+```bash
+curl "https://api.saveapp.io/api/members/a1b2c3d4-e5f6-7890-abcd-ef1234567890" \
+  -H "Authorization: Bearer <token>"
+```
+
+The response shape is identical to a single element in the list response above.
+
+## Update a member
+
+Use `PUT /api/members/{id}` to change a member's role or active status. Only the group creator can promote or demote roles; any admin can toggle `is_active`.
+
+<CodeGroup>
+```bash Promote to admin
+curl -X PUT "https://api.saveapp.io/api/members/a1b2c3d4-e5f6-7890-abcd-ef1234567890" \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"role": "Administrator"}'
+```
+
+```bash Suspend a member
+curl -X PUT "https://api.saveapp.io/api/members/a1b2c3d4-e5f6-7890-abcd-ef1234567890" \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"is_active": false}'
+```
+
+```bash Reactivate a member
+curl -X PUT "https://api.saveapp.io/api/members/a1b2c3d4-e5f6-7890-abcd-ef1234567890" \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"is_active": true}'
+```
+</CodeGroup>
+
+**Response**
+
+```json
+{
+  "success": true,
+  "message": "Member updated successfully"
+}
+```
+
+<Warning>
+  Suspended members (`is_active: false`) cannot log in, request loans, or appear in the payout queue. Reactivate them before restoring access.
+</Warning>
+
+## Member onboarding flow
+
+When an admin creates a member without a password — or wants the member to choose their own PIN — the member completes a short self-service onboarding flow.
+
+<Steps>
+  <Step title="Admin creates the member account">
+    Create the member without a password. The account status is set to `pending` automatically.
+
+    ```bash
+    curl -X POST https://api.saveapp.io/api/members \
+      -H "Authorization: Bearer <admin_token>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "David Ochieng",
+        "phone": "+256782345678",
+        "role": "Member"
+      }'
+    ```
+  </Step>
+
+  <Step title="Admin shares credentials with the member">
+    Send the member their phone number and the group name out of band (SMS, WhatsApp, or in person). These are the two pieces of information the member needs to start onboarding.
+  </Step>
+
+  <Step title="Member checks onboarding status">
+    The member's app calls the onboarding check endpoint to verify the account exists and is awaiting a password.
+
+    ```bash
+    curl -X POST https://api.saveapp.io/api/auth/onboarding/check-phone \
+      -H "Content-Type: application/json" \
+      -d '{
+        "phone": "+256782345678",
+        "groupName": "Kampala Savers"
+      }'
+    ```
+  </Step>
+
+  <Step title="Member sets their password">
+    The member chooses a secure password using the set-password endpoint.
+
+    ```bash
+    curl -X POST https://api.saveapp.io/api/auth/onboarding/set-password \
+      -H "Content-Type: application/json" \
+      -d '{
+        "phone": "+256782345678",
+        "password": "securepass1"
+      }'
+    ```
+
+    After this call succeeds, `status` transitions from `pending` to `active` and the member can log in normally.
+  </Step>
+</Steps>
+
+## Suspend a member
+
+Suspending a member is a non-destructive operation — all their contribution history, credit score, and loan records are preserved. To suspend, send `is_active: false`:
+
+```bash
+curl -X PUT "https://api.saveapp.io/api/members/a1b2c3d4-e5f6-7890-abcd-ef1234567890" \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"is_active": false}'
+
+To restore access later, repeat the request with `"is_active": true`.
+
+## MemberEntity response fields
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Unique member UUID |
+| `name` | string | Full display name |
+| `phone` | string | Phone in `+256` format |
+| `role` | string | `"member"` or `"admin"` |
+| `group_name` | string | Savings group name |
+| `contribution_paid` | float | Total contributions approved so far |
+| `shortfall_amount` | float | Outstanding shortfall balance owed to the group |
+| `has_received_payout` | boolean | Whether the member has received a cycle payout |
+| `is_active` | boolean | `false` means account is suspended |
+| `is_creator` | boolean | `true` for the group founder |
+| `status` | string | `"pending"` (before onboarding) or `"active"` |
+| `created_at` | datetime | Account creation timestamp (ISO 8601) |
+| `reliability_label` | string | `SAFE`, `STABLE`, `MODERATE`, or `AT RISK` |
+| `reliability_color` | string | Hex colour matching the reliability label |
+| `is_eligible` | boolean | `true` if the member qualifies for a loan (score ≥ 60 and active) |
+| `credit_score` | integer | Current credit score (300–850, starting at 500) |

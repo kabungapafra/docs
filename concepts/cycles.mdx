@@ -1,0 +1,177 @@
+---
+title: "Savings Cycles: How Contribution Rounds Work in Save App"
+description: "Learn how Save App organizes savings into cycles, how the payout queue is built from credit scores, and how admins start, monitor, and close each round."
+---
+
+A **cycle** is a single contribution round in your savings group. During a cycle every active member is expected to pay a fixed `contribution_amount` by a set `contribution_due_date`, and each member receives a payout exactly once — in an order determined by their credit score. Only one cycle can be active at a time. When all payouts have been disbursed the admin ends the cycle, credit scores are updated, and the group is ready to start the next round.
+
+## Cycle Lifecycle
+
+```
+[Admin starts cycle] → ACTIVE → [All contributions paid, payouts disbursed] → [Admin ends cycle] → COMPLETED
+```
+
+The `status` field on a cycle object will be one of:
+
+| Status | Meaning |
+|--------|---------|
+| `ACTIVE` | The cycle is running; contributions are being collected and payouts are being processed |
+| `COMPLETED` | The cycle has ended; all members received their payouts |
+| `CANCELLED` | The cycle was cancelled before completion (rare administrative action) |
+
+## Key Cycle Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique cycle identifier |
+| `cycle_number` | integer | Auto-incrementing sequence number (1, 2, 3…) |
+| `contribution_amount` | float | Fixed amount every member must pay this cycle |
+| `contribution_due_date` | datetime | Deadline for all member contributions |
+| `start_date` | datetime | When the cycle officially began |
+| `end_date` | datetime \| null | When the cycle was closed; `null` while active |
+| `status` | string | `ACTIVE` or `COMPLETED` |
+
+## API Endpoints
+
+### Start a new cycle
+
+`POST /api/cycles/start` — **Admin only**
+
+Creates a new cycle and immediately generates the payout queue based on current credit scores. If `contribution_amount` is omitted, the value from system configuration (`SystemConfig.contribution_amount`) is used.
+
+<CodeGroup>
+```json Request
+{
+  "contribution_amount": 50000,
+  "contribution_due_date": "2025-07-31T23:59:59",
+  "start_date": "2025-07-01T00:00:00"
+}
+```
+
+```json Response
+{
+  "id": "c7f3a2b1-84e0-4d9c-b6fa-1234abcd5678",
+  "cycle_number": 4,
+  "start_date": "2025-07-01T00:00:00",
+  "end_date": null,
+  "contribution_amount": 50000.0,
+  "contribution_due_date": "2025-07-31T23:59:59",
+  "status": "ACTIVE"
+}
+```
+</CodeGroup>
+
+<Warning>
+  Starting a new cycle when one is already `ACTIVE` returns a `400 Bad Request`. You must end the current cycle before starting another.
+</Warning>
+
+### Get the current active cycle
+
+`GET /api/cycles/current` — Any authenticated user
+
+Returns the single active cycle, or `404` if none exists.
+
+### Get cycle statistics
+
+`GET /api/cycles/{cycle_id}/statistics` — Any authenticated user
+
+Returns a real-time snapshot of how the cycle is progressing.
+
+```json
+{
+  "cycle_number": 4,
+  "status": "ACTIVE",
+  "contribution_amount": 50000.0,
+  "contribution_due_date": "2025-07-31T23:59:59",
+  "total_members": 12,
+  "members_paid_contribution": 9,
+  "members_received_payout": 3,
+  "total_contributions_collected": 450000.0,
+  "is_complete": false
+}
+```
+
+### Get the payout queue
+
+`GET /api/cycles/{cycle_id}/queue` — Any authenticated user
+
+Returns the full ordered list of members and their payout status for the cycle. The queue is generated once at cycle creation using each member's credit score at that moment (`credit_score_at_generation`).
+
+```json
+[
+  {
+    "id": "qe-001",
+    "member_id": "usr-abc",
+    "member_name": "Grace Akello",
+    "position": 1,
+    "credit_score_at_generation": 720.0,
+    "has_received_payout": true,
+    "payout_date": "2025-07-10T00:00:00",
+    "actual_payout_date": "2025-07-10T14:32:00"
+  },
+  {
+    "id": "qe-002",
+    "member_id": "usr-def",
+    "member_name": "Peter Okello",
+    "position": 2,
+    "credit_score_at_generation": 655.0,
+    "has_received_payout": false,
+    "payout_date": null,
+    "actual_payout_date": null
+  }
+]
+```
+
+### End a cycle
+
+`POST /api/cycles/{cycle_id}/end` — **Admin only**
+
+Closes the cycle and records a `cycles_completed` event on every member's credit score. The endpoint returns `400` if any queue member has not yet received their payout.
+
+```json
+{ "message": "Cycle ended successfully" }
+```
+
+### Check contribution completion
+
+`GET /api/cycles/{cycle_id}/contributions-complete` — Any authenticated user
+
+A lightweight check that returns `true` when every active member has paid the full `contribution_amount`.
+
+```json
+{ "all_contributions_received": true }
+```
+
+## The Payout Queue
+
+When a cycle starts, Save App calls `get_member_rankings` to retrieve all active members sorted by credit score (highest first). It creates a `PayoutQueue` row for each member, locking in their `credit_score_at_generation` and `position`. That order does not change during the cycle — it is a snapshot taken at the moment the cycle was created.
+
+<Note>
+  A member must have their contribution paid in full before the group can process any payout in that cycle. The `can_process_payout` check enforces this: if `all_contributions_received` is `false`, no payout will be approved.
+</Note>
+
+Payouts are processed in ascending `position` order. Each admin must approve a payout before it is executed. Once executed, `has_received_payout` is set to `true` for that queue entry and `actual_payout_date` is recorded.
+
+## Frequently Asked Questions
+
+<AccordionGroup>
+  <Accordion title="What if I miss the contribution due date?">
+    Your contribution is still accepted after the due date, but it is recorded as a **late payment**, which reduces your credit score. A late payment carries a `-10` point penalty by default. Missed payments (never paid) carry a `-20` penalty. Your position in the queue for the *current* cycle is already fixed, but your score will affect your queue position in the *next* cycle.
+  </Accordion>
+
+  <Accordion title="Can the payout queue order change mid-cycle?">
+    No. The queue is a snapshot generated at cycle creation. Subsequent changes to credit scores during the cycle do not affect the current queue. The updated scores will influence the queue generated when the next cycle starts.
+  </Accordion>
+
+  <Accordion title="What happens if a member joins after a cycle has started?">
+    New members added while a cycle is already `ACTIVE` are not automatically added to the existing queue. They will appear in the queue for the next cycle that starts after their account becomes `active`.
+  </Accordion>
+
+  <Accordion title="Can a cycle be started with a custom contribution amount?">
+    Yes. If you supply `contribution_amount` in the `POST /api/cycles/start` body it overrides the system-wide default for that cycle only. If you omit it, the system configuration value (`SystemConfig.contribution_amount`, default 50,000) is used.
+  </Accordion>
+
+  <Accordion title="What does 'is_complete' mean in statistics?">
+    `is_complete: true` means every member in the payout queue for that cycle has `has_received_payout: true`. It is a prerequisite for calling `POST /api/cycles/{cycle_id}/end` — the end endpoint will reject the request if `is_complete` is still `false`.
+  </Accordion>
+</AccordionGroup>

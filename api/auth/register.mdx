@@ -1,0 +1,157 @@
+---
+title: "POST /api/auth/admin/verify-otp — Register an admin"
+sidebarTitle: "Register Admin"
+description: "Complete admin registration after Firebase phone verification, and onboard pre-approved members through a two-step phone-check and password-set flow."
+---
+
+Save App supports two distinct registration paths: one for admins who create or join a group, and one for members who have been pre-approved by an admin. Admin registration uses Firebase Phone Authentication for identity verification. Member onboarding uses a two-step flow where the admin first adds the member's phone, and the member then activates their own account by setting a password.
+
+## POST /api/auth/admin/verify-otp
+
+Completes admin registration (or re-authentication) after the client has verified the admin's phone number using Firebase Phone Authentication. If no account exists for the phone number, a new admin account is created. If an account already exists, it is promoted to admin and associated with the group.
+
+<Note>
+  This endpoint is rate-limited to **5 requests per minute** and **20 requests per hour**.
+</Note>
+
+### Request body
+
+<ParamField body="phone" type="string" required>
+  The admin's phone number in Uganda format (`+256XXXXXXXXX`). This must match the phone number verified by Firebase.
+</ParamField>
+
+<ParamField body="otp" type="string" required>
+  Pass the literal string `"FIREBASE_VERIFIED"` to indicate that the phone was verified on the client using Firebase Phone Auth. Standard OTP codes from SMS are no longer issued by the backend.
+</ParamField>
+
+<ParamField body="name" type="string">
+  The admin's display name. **Required when creating a new account.** Must be between 2 and 100 characters.
+</ParamField>
+
+<ParamField body="password" type="string">
+  The admin's chosen password. **Required when creating a new account.** Minimum 8 characters.
+</ParamField>
+
+<ParamField body="groupName" type="string">
+  The name of the group to create or join. Defaults to `"Default Group"` if omitted. Must be between 2 and 100 characters. Group name matching is case-insensitive.
+</ParamField>
+
+### Response
+
+Returns a `LoginResponse` with an active JWT token. If this admin is the first admin registered in the specified group, `is_creator` is `true`.
+
+<ResponseField name="token" type="string" required>
+  A signed JWT bearer token valid for 24 hours.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  The admin's display name.
+</ResponseField>
+
+<ResponseField name="role" type="string" required>
+  Always `"admin"` for this endpoint.
+</ResponseField>
+
+<ResponseField name="is_creator" type="boolean" required>
+  `true` if this admin is the first admin in the group, making them the group creator.
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+|--------|-----------|
+| `400 Bad Request` | `name` or `password` was not provided when creating a new account. |
+
+### Example
+
+```bash
+curl --request POST \
+  --url https://api.saveapp.co/api/auth/admin/verify-otp \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "phone": "+256700123456",
+    "otp": "FIREBASE_VERIFIED",
+    "name": "David Ssempa",
+    "password": "securepass1",
+    "groupName": "Kampala Savers"
+  }'
+```
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "name": "David Ssempa",
+  "role": "admin",
+  "is_creator": true
+}
+```
+
+---
+
+## Member onboarding
+
+Members do not self-register. An admin first adds a member's phone number to the group (setting their status to `"pending"`). The member then completes a two-step onboarding flow to activate their account.
+
+<Steps>
+  <Step title="Check phone number">
+    Call `POST /api/auth/onboarding/check-phone` with the member's phone number and group name. This confirms that the admin has pre-approved the phone and that the member is joining the correct group.
+
+    **Request body**
+
+    <ParamField body="phone" type="string" required>
+      The member's phone number. Accepts Uganda local format (starting with `0`) which the server normalises to `+256` automatically.
+    </ParamField>
+
+    <ParamField body="groupName" type="string" required>
+      The group the member is attempting to join. Must match the group the admin registered them under (case-insensitive).
+    </ParamField>
+
+    **Successful response**
+
+    ```json
+    {
+      "success": true,
+      "message": "User found"
+    }
+    ```
+
+    If the phone is not found as a pending member, or belongs to a different group, `success` is `false` and `message` describes the problem. No error status codes are thrown — always check the `success` field.
+  </Step>
+
+  <Step title="Set password and activate">
+    Call `POST /api/auth/onboarding/set-password` with the member's phone number and their chosen password. This sets the password, activates the account, and returns a JWT token so the member is immediately logged in.
+
+    **Request body**
+
+    <ParamField body="phone" type="string" required>
+      The member's phone number in Uganda format (`+256XXXXXXXXX` or local `0XXXXXXXXX`).
+    </ParamField>
+
+    <ParamField body="password" type="string" required>
+      The member's chosen password. Minimum 8 characters.
+    </ParamField>
+
+    **Successful response**
+
+    Returns a `LoginResponse` identical in shape to the admin registration response, with `role: "member"`.
+
+    ```json
+    {
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "name": "Grace Atim",
+      "role": "member",
+      "is_creator": false
+    }
+    ```
+
+    **Error responses**
+
+    | Status | Condition |
+    |--------|-----------|
+    | `404 Not Found` | No pending member found for the given phone number. |
+  </Step>
+</Steps>
+
+<Warning>
+  The onboarding flow only works for members whose status is `"pending"`. Once a member calls `set-password`, their status becomes `"active"` and this endpoint will no longer find them. Attempting the flow again returns `404`.
+</Warning>

@@ -1,0 +1,145 @@
+---
+title: "Quick Start Guide: Make Your First Save App API Calls"
+description: "Make your first Save App API calls in minutes. Register a group admin, log in to get a JWT token, add a member, and view the analytics dashboard."
+---
+
+This guide walks you through the four API calls that set up a working savings group: registering an admin, logging in to get a token, adding a member, and viewing the group dashboard. All examples use `curl` and real request bodies drawn from the Save App schemas.
+
+<Note>
+  The base URL for all requests defaults to `http://localhost:8000` in development. Replace this with your deployed API URL in production.
+</Note>
+
+<Steps>
+  <Step title="Register as a group admin">
+    Admin registration uses Firebase Phone Authentication on the mobile client. After Firebase verifies the phone number, your app calls `POST /api/auth/admin/verify-otp` with `otp` set to the special value `"FIREBASE_VERIFIED"` to complete registration on the backend.
+
+    The first admin to register under a group name automatically becomes its creator (`is_creator: true`). Subsequent admins in the same group are not creators.
+
+    <CodeGroup>
+      ```bash curl
+      curl -X POST http://localhost:8000/api/auth/admin/verify-otp \
+        -H "Content-Type: application/json" \
+        -d '{
+          "phone": "+256701234567",
+          "otp": "FIREBASE_VERIFIED",
+          "name": "Amara Osei",
+          "password": "1234",
+          "groupName": "Kampala Savers"
+        }'
+      ```
+    </CodeGroup>
+
+    A successful response returns a JWT token and confirms the admin's role:
+
+    ```json
+    {
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "name": "Amara Osei",
+      "role": "admin",
+      "is_creator": true
+    }
+    ```
+
+    Save the `token` — you will use it to authenticate subsequent requests. Tokens expire after 24 hours.
+  </Step>
+
+  <Step title="Log in and get a token">
+    After initial registration, admins and members log in using their phone number and 4-digit PIN. Pass `loginType` to enforce role-based portal access — the API returns `403 Forbidden` if a member attempts to log in to the admin portal.
+
+    <CodeGroup>
+      ```bash curl
+      curl -X POST http://localhost:8000/api/auth/login \
+        -H "Content-Type: application/json" \
+        -d '{
+          "phone": "+256701234567",
+          "password": "1234",
+          "groupName": "Kampala Savers",
+          "loginType": "admin"
+        }'
+      ```
+    </CodeGroup>
+
+    ```json
+    {
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "name": "Amara Osei",
+      "role": "admin",
+      "is_creator": true
+    }
+    ```
+
+    Use the returned `token` as a Bearer token on all subsequent authenticated requests:
+
+    ```
+    Authorization: Bearer <token>
+    ```
+  </Step>
+
+  <Step title="Add a member">
+    Admins add members to the group with `POST /api/members`. New members are created in `"pending"` status with a temporary password. They complete onboarding by calling the [check-phone and set-password endpoints](/authentication#member-onboarding) to set their own PIN.
+
+    <CodeGroup>
+      ```bash curl
+      curl -X POST http://localhost:8000/api/members \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer <token>" \
+        -d '{
+          "name": "Fatima Nakato",
+          "phone": "+256789876543",
+          "role": "member",
+          "password": "1234"
+        }'
+      ```
+    </CodeGroup>
+
+    ```json
+    {
+      "success": true,
+      "message": "Member registered successfully"
+    }
+    ```
+  </Step>
+
+  <Step title="View the group dashboard">
+    `GET /api/analytics/summary` returns a snapshot of the group: total and active member counts, group balance, personal savings for the authenticated admin, and the number of items awaiting approval.
+
+    <CodeGroup>
+      ```bash curl
+      curl -X GET http://localhost:8000/api/analytics/summary \
+        -H "Authorization: Bearer <token>"
+      ```
+    </CodeGroup>
+
+    ```json
+    {
+      "total_members": 12,
+      "active_members": 11,
+      "total_balance": 4500000.00,
+      "personal_savings": 375000.00,
+      "pending_approvals_count": 2,
+      "group_name": "Kampala Savers",
+      "admin_name": "Amara Osei",
+      "monthly_contributions": 600000.00,
+      "interest_earned": 22500.00,
+      "group_id": "grp_01HXYZ"
+    }
+    ```
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/authentication">
+    Understand token expiry, Firebase login, and the member onboarding flow.
+  </Card>
+  <Card title="Managing members" icon="users" href="/guides/managing-members">
+    Add, update, suspend, and onboard members in your group.
+  </Card>
+  <Card title="Loans" icon="hand-holding-dollar" href="/guides/loans">
+    Submit loan requests, check eligibility, and record repayments.
+  </Card>
+  <Card title="Analytics" icon="chart-bar" href="/api/analytics/dashboard">
+    Fetch dashboard data and financial reports for your group.
+  </Card>
+</CardGroup>

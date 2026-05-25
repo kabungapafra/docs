@@ -1,0 +1,172 @@
+---
+title: "Loan Repayment API and Repayment Schedule Generator"
+sidebarTitle: "Repayment"
+description: "Generate a full repayment schedule for any loan amount and duration, and record partial or full repayments against an active loan."
+---
+
+The Save App repayment system covers two related workflows: previewing what a loan will cost before committing to it, and recording actual payments against an active loan. You can generate a repayment schedule for any amount and duration without creating a loan, which is useful for showing members a cost breakdown upfront. Once a loan is active, members (or admins) can record repayments until the balance is cleared.
+
+---
+
+## Generate a repayment schedule
+
+Calculate the full repayment breakdown for a hypothetical loan without creating any records. Use this to preview monthly installments and total interest before the member submits a request.
+
+```
+POST /api/loans/repayment-schedule
+```
+
+### Request body
+
+<ParamField body="amount" type="number" required>
+  The loan principal to calculate the schedule for.
+</ParamField>
+
+<ParamField body="duration_months" type="number" required>
+  The repayment duration in months. The schedule will contain one entry per month.
+</ParamField>
+
+### Response fields
+
+<ResponseField name="total_repayment" type="number" required>
+  Total amount to be repaid (principal plus interest).
+</ResponseField>
+
+<ResponseField name="monthly_installment" type="number" required>
+  Equal monthly payment amount. Calculated as `total_repayment / duration_months`.
+</ResponseField>
+
+<ResponseField name="interest_amount" type="number" required>
+  Total interest charged over the full duration. Calculated as `amount × (interest_rate / 100) × (duration_months / 12)`.
+</ResponseField>
+
+<ResponseField name="schedule" type="object[]" required>
+  Array of monthly payment entries, one per month.
+
+  <Expandable title="Schedule item fields">
+    <ResponseField name="month" type="number" required>
+      Month number, starting at `1`.
+    </ResponseField>
+    <ResponseField name="due_date" type="string" required>
+      ISO 8601 timestamp for when this installment is due. Each month is approximately 30 days after the previous.
+    </ResponseField>
+    <ResponseField name="amount" type="number" required>
+      Payment amount due for this month. Equal to `monthly_installment`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Generate a repayment schedule
+curl --request POST \
+  --url 'https://api.saveapp.example.com/api/loans/repayment-schedule' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "amount": 600000,
+    "duration_months": 6
+  }'
+```
+
+</CodeGroup>
+
+**Sample response**
+
+```json
+{
+  "total_repayment": 630000,
+  "monthly_installment": 105000,
+  "interest_amount": 30000,
+  "schedule": [
+    { "month": 1, "due_date": "2024-07-25T00:00:00", "amount": 105000 },
+    { "month": 2, "due_date": "2024-08-24T00:00:00", "amount": 105000 },
+    { "month": 3, "due_date": "2024-09-23T00:00:00", "amount": 105000 },
+    { "month": 4, "due_date": "2024-10-23T00:00:00", "amount": 105000 },
+    { "month": 5, "due_date": "2024-11-22T00:00:00", "amount": 105000 },
+    { "month": 6, "due_date": "2024-12-22T00:00:00", "amount": 105000 }
+  ]
+}
+```
+
+---
+
+## Record a loan repayment
+
+Record a payment against an active loan. The loan's `repaidAmount` increases by the payment and, once `repaidAmount` reaches `totalDue`, the loan status automatically becomes `COMPLETED`.
+
+```
+POST /api/loans/{id}/repay
+```
+
+<Note>
+  Partial repayments are fully supported. You do not need to pay the full outstanding balance in a single transaction — any amount greater than zero and less than or equal to the remaining balance is accepted.
+</Note>
+
+### Path parameters
+
+<ParamField path="id" type="string" required>
+  The unique identifier of the loan to repay.
+</ParamField>
+
+### Request body
+
+<ParamField body="amount" type="number" required>
+  The repayment amount. Must be greater than `0` and must not exceed the outstanding balance (`totalDue - repaidAmount`).
+</ParamField>
+
+<ParamField body="paymentMethod" type="string" required>
+  The payment channel used. Examples: `"mobile_money"`, `"cash"`. Minimum 1 character.
+</ParamField>
+
+<ParamField body="phoneNumber" type="string">
+  Ugandan phone number associated with the payment, required when `paymentMethod` is `"mobile_money"`. Must match the pattern `^\+?256[0-9]{9}$`.
+</ParamField>
+
+### Eligibility rules
+
+- The loan must be in `APPROVED`, `ACTIVE`, or `OVERDUE` status.
+- Members can only repay their own loans; admins can repay any loan.
+- The payment amount must not exceed the remaining balance.
+- When `repaidAmount >= totalDue` after the payment, the loan status changes to `COMPLETED` and `repaidAmount` is capped at `totalDue`.
+
+### Response fields
+
+<ResponseField name="success" type="boolean" required>
+  `true` when the repayment was recorded successfully.
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  Confirmation message, e.g. `"Loan repayment recorded"`.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Record a partial repayment (mobile money)
+curl --request POST \
+  --url 'https://api.saveapp.example.com/api/loans/loan_abc123/repay' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "amount": 105000,
+    "paymentMethod": "mobile_money",
+    "phoneNumber": "+256701234567"
+  }'
+```
+
+```bash Record a cash repayment
+curl --request POST \
+  --url 'https://api.saveapp.example.com/api/loans/loan_abc123/repay' \
+  --header 'Authorization: Bearer <token>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "amount": 105000,
+    "paymentMethod": "cash"
+  }'
+```
+
+</CodeGroup>

@@ -1,0 +1,170 @@
+---
+title: "Record and Approve Member Contributions in Save App"
+description: "Record contributions, loan repayments, payouts, and penalties, then walk through the admin approval workflow that updates group balance and credit scores."
+---
+
+A transaction in Save App represents any financial event that affects the group fund or a member's standing. Every transaction starts in `PENDING` status and must be approved by all active admins before it is reflected in the group balance and the member's credit score. This two-step model ensures that every movement of funds has been verified by the group leadership.
+
+## Transaction types
+
+| Type | Description |
+|---|---|
+| `contribution` | A member's regular savings deposit |
+| `payout` | A disbursement from the group fund to a member |
+| `loan_repayment` | A repayment towards an active loan |
+| `penalty` | A penalty charged for a late or missed contribution |
+
+## Record a transaction
+
+Any authenticated user can record a transaction. Admins can record on behalf of any member by name; regular members are limited to recording against their own account.
+
+```bash
+curl -X POST https://api.saveapp.co/api/transactions \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "memberName": "Amara Nakato",
+    "type": "contribution",
+    "amount": 50000,
+    "description": "Monthly contribution for January 2025",
+    "paymentMethod": "mobile_money",
+    "idempotency_key": "contrib-amara-202501-001"
+  }'
+```
+
+**Response**
+
+```json
+{
+  "id": "c4d5e6f7-a8b9-0123-cdef-456789012345",
+  "member_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "memberName": "Amara Nakato",
+  "type": "contribution",
+  "amount": 50000.0,
+  "description": "Monthly contribution for January 2025",
+  "payment_method": "mobile_money",
+  "status": "pending",
+  "date": "2025-01-10T10:30:00Z"
+}
+```
+
+<Note>
+  Pass a unique `idempotency_key` when submitting transactions from a mobile app. If a network timeout causes you to retry, the API will return the original transaction record rather than creating a duplicate charge. Use a key that includes the member name, date, and a unique counter, for example `"contrib-amara-202501-001"`.
+</Note>
+
+The `paymentMethod` field is a free-form string. Common values used across Save App groups include `"mobile_money"` and `"cash"`, but you may use any label that matches your group's reconciliation process.
+
+## View transactions
+
+Retrieve transactions with optional filters. Members only see their own transactions; admins see all transactions in the group.
+
+<CodeGroup>
+```bash All transactions
+curl "https://api.saveapp.co/api/transactions?limit=20&offset=0" \
+  -H "Authorization: Bearer <token>"
+```
+
+```bash Filter by member
+curl "https://api.saveapp.co/api/transactions?memberId=a1b2c3d4-e5f6-7890-abcd-ef1234567890&limit=20" \
+  -H "Authorization: Bearer <admin_token>"
+```
+
+```bash Filter by date range
+curl "https://api.saveapp.co/api/transactions?startDate=1704067200000&endDate=1706745600000&limit=20" \
+  -H "Authorization: Bearer <admin_token>"
+```
+</CodeGroup>
+
+<Info>
+  The `startDate` and `endDate` query parameters accept Unix timestamps **in milliseconds**. For example, `1704067200000` represents `2024-01-01T00:00:00Z`. Convert your date to milliseconds by multiplying a seconds-based Unix timestamp by 1000.
+</Info>
+
+**Response**
+
+```json
+{
+  "data": [
+    {
+      "id": "c4d5e6f7-a8b9-0123-cdef-456789012345",
+      "member_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "memberName": "Amara Nakato",
+      "type": "contribution",
+      "amount": 50000.0,
+      "description": "Monthly contribution for January 2025",
+      "payment_method": "mobile_money",
+      "status": "pending",
+      "date": "2025-01-10T10:30:00Z"
+    }
+  ],
+  "total": 1,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+## Admin approval workflow
+
+Transactions require **unanimous approval** from all active admins before they take effect. Each admin independently calls the approve endpoint; the API tracks progress and executes the transaction automatically once the final admin approves.
+
+```bash
+curl -X POST "https://api.saveapp.co/api/transactions/c4d5e6f7-a8b9-0123-cdef-456789012345/approve" \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "adminEmail": "admin@kampalasampavers.co.ug"
+  }'
+```
+
+**Before unanimous approval** (waiting for more admins):
+
+```json
+{
+  "success": true,
+  "message": "Approval recorded. Waiting for other admins to approve."
+}
+```
+
+**After unanimous approval** (all admins have voted):
+
+```json
+{
+  "success": true,
+  "message": "Transaction approved and executed successfully"
+}
+```
+
+### What happens on approval
+
+When the final admin's vote triggers execution, the API performs these side effects automatically based on the transaction type:
+
+| Type | Balance effect | Member effect |
+|---|---|---|
+| `contribution` | Group balance **credited** | `contribution_paid` increases; credit score updated based on timing |
+| `payout` | Group balance **debited** | — |
+| `loan_repayment` | Group balance **credited** | — |
+| `penalty` | Group balance **credited** | `shortfall_amount` increases |
+
+### Credit score and timing
+
+For contribution transactions, the API checks whether the payment was made before or after the active cycle's `contribution_due_date`:
+
+- **On time** — the member's credit score is increased (default `+5` points)
+- **Late** — the member's credit score is decreased (default `−10` points)
+
+<Warning>
+  Only `PENDING` transactions can be approved. Attempting to approve a transaction with any other status will return a `400` error.
+</Warning>
+
+## TransactionEntity response fields
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Unique transaction UUID |
+| `member_id` | string | UUID of the member the transaction belongs to |
+| `memberName` | string | Display name of the member |
+| `type` | string | `contribution`, `payout`, `loan_repayment`, or `penalty` |
+| `amount` | float | Transaction amount |
+| `description` | string | Optional free-text note |
+| `payment_method` | string | Payment channel used (e.g. `"mobile_money"`, `"cash"`) |
+| `status` | string | `"pending"` or `"approved"` |
+| `date` | datetime | Timestamp when the transaction was recorded (ISO 8601) |

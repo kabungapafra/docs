@@ -1,0 +1,53 @@
+---
+title: "Save App: Group Savings, Loans, and Rotating Payouts"
+description: "Save App helps savings groups manage contributions, loans, and payouts. Explore API docs, guides, and references to build with or integrate into Save App."
+---
+
+Save App is a backend API for managing savings circles (chamas) — groups where members make regular contributions, request loans against their savings, and receive rotating payouts. This documentation covers every public API endpoint, guides for common workflows, and core concepts to help you get up and running quickly.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Make your first API call in minutes. Register a group, log in, and fetch your dashboard.
+  </Card>
+  <Card title="Authentication" icon="lock" href="/authentication">
+    Learn how to obtain a JWT token and authenticate every API request.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/auth/login">
+    Browse the full REST API — endpoints, request bodies, and response schemas.
+  </Card>
+  <Card title="Guides" icon="book-open" href="/guides/managing-members">
+    Step-by-step walkthroughs for members, loans, transactions, and payouts.
+  </Card>
+</CardGroup>
+
+## How Save App works
+
+<Steps>
+  <Step title="Create a group and register as admin">
+    An admin registers a new savings group by verifying their phone number. They become the group creator and can invite members.
+  </Step>
+  <Step title="Add members and collect contributions">
+    Members are added by the admin and complete onboarding by setting their own password. Each contribution they make is recorded and approved by admins.
+  </Step>
+  <Step title="Manage loans">
+    Members can request loans up to 3× their total contributions. Admins review and unanimously approve or reject each request.
+  </Step>
+  <Step title="Run cycles and execute payouts">
+    Admins start savings cycles with a contribution due date. At the end of each cycle, payouts are distributed based on member credit scores and the payout queue.
+  </Step>
+</Steps>
+
+<CardGroup cols={2}>
+  <Card title="Groups & Members" icon="users" href="/concepts/groups">
+    Understand how groups, roles, and membership work in Save App.
+  </Card>
+  <Card title="Savings Cycles" icon="rotate" href="/concepts/cycles">
+    Learn how cycles structure the contribution and payout schedule.
+  </Card>
+  <Card title="Credit Scores" icon="chart-line" href="/concepts/credit-scores">
+    See how member reliability is tracked and how it affects payout order.
+  </Card>
+  <Card title="Loan Management" icon="hand-holding-dollar" href="/guides/loans">
+    Request loans, check eligibility, and record repayments.
+  </Card>
+</CardGroup>

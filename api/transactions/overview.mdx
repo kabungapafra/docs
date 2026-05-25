@@ -1,0 +1,269 @@
+---
+title: "Transactions API: Record and Approve Contributions"
+sidebarTitle: "Transactions"
+description: "Record contributions, payouts, and loan repayments for group members. All transactions start as PENDING and require unanimous admin approval before funds move."
+---
+
+The Transactions API lets you record and manage all financial activity in a group — contributions, payouts, loan repayments, and penalties. Every transaction is created with a `PENDING` status and only takes effect on the group balance after all active admins have approved it. Members can view their own transaction history; admins can filter across the entire group.
+
+---
+
+## List transactions
+
+Retrieve a paginated list of transactions. Members always see only their own records. Admins can optionally filter by any member and by date range.
+
+**`GET /api/transactions`**
+
+### Query parameters
+
+<ParamField query="memberId" type="string">
+  Filter by member ID. Admins only — members always see their own transactions regardless of this parameter.
+</ParamField>
+
+<ParamField query="startDate" type="integer">
+  Start of the date range as a Unix timestamp in **milliseconds** (e.g., `1700000000000`).
+</ParamField>
+
+<ParamField query="endDate" type="integer">
+  End of the date range as a Unix timestamp in **milliseconds**.
+</ParamField>
+
+<ParamField query="limit" type="integer" default="20">
+  Maximum number of records to return. Minimum `1`, maximum `100`.
+</ParamField>
+
+<ParamField query="offset" type="integer" default="0">
+  Number of records to skip for pagination. Minimum `0`.
+</ParamField>
+
+### Response
+
+Returns a `PaginatedResponse` wrapping a list of `TransactionEntity` objects.
+
+<ResponseField name="data" type="TransactionEntity[]">
+  List of transactions for the current page.
+
+  <Expandable title="TransactionEntity fields">
+    <ResponseField name="id" type="string" required>
+      Unique transaction identifier (UUID).
+    </ResponseField>
+    <ResponseField name="member_id" type="string" required>
+      ID of the member this transaction belongs to.
+    </ResponseField>
+    <ResponseField name="memberName" type="string">
+      Display name of the member, populated from the joined user record.
+    </ResponseField>
+    <ResponseField name="type" type="string" required>
+      Transaction type. One of: `CONTRIBUTION`, `PAYOUT`, `LOAN_REPAYMENT`, `PENALTY`, `SHORTFALL_RESOLUTION`.
+    </ResponseField>
+    <ResponseField name="amount" type="number" required>
+      Transaction amount.
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Optional human-readable note attached to the transaction.
+    </ResponseField>
+    <ResponseField name="payment_method" type="string">
+      Payment channel used, e.g. `mobile_money` or `cash`.
+    </ResponseField>
+    <ResponseField name="status" type="string" required>
+      Current status: `PENDING`, `APPROVED`, or `REJECTED`.
+    </ResponseField>
+    <ResponseField name="date" type="string" required>
+      ISO 8601 datetime when the transaction was recorded.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="total" type="integer" required>
+  Total number of transactions matching the applied filters.
+</ResponseField>
+
+<ResponseField name="limit" type="integer" required>
+  The `limit` value used in this response.
+</ResponseField>
+
+<ResponseField name="offset" type="integer" required>
+  The `offset` value used in this response.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash List all transactions (admin)
+curl --request GET \
+  --url "https://api.saveapp.example/api/transactions?limit=20&offset=0" \
+  --header "Authorization: Bearer <token>"
+```
+
+```bash Filter by member and date range
+curl --request GET \
+  --url "https://api.saveapp.example/api/transactions?memberId=usr_abc123&startDate=1700000000000&endDate=1702000000000&limit=10" \
+  --header "Authorization: Bearer <token>"
+```
+
+</CodeGroup>
+
+---
+
+## Create a transaction
+
+Record a new financial transaction for a group member. The transaction is immediately saved with a `PENDING` status — it does **not** affect the group balance until it is approved.
+
+**`POST /api/transactions`**
+
+<Warning>
+  This endpoint is rate-limited to **10 requests per minute**. Implement exponential back-off on your client when retrying after a `429 Too Many Requests` response.
+</Warning>
+
+<Note>
+  Supply an `idempotency_key` on every request that may be retried (e.g., after a network timeout). If the server has already processed a request with the same key, it returns the original transaction instead of creating a duplicate.
+</Note>
+
+### Request body
+
+<ParamField body="memberName" type="string" required>
+  Full name of the member as stored in the system. The API looks up the member record by this name.
+</ParamField>
+
+<ParamField body="type" type="string" required>
+  Type of transaction. Must be one of: `CONTRIBUTION`, `PAYOUT`, `LOAN_REPAYMENT`, `PENALTY`, `SHORTFALL_RESOLUTION`.
+</ParamField>
+
+<ParamField body="amount" type="number" required>
+  Amount in the group's currency. Must be greater than `0` and must not exceed the system-configured `MAX_TRANSACTION_AMOUNT`.
+</ParamField>
+
+<ParamField body="description" type="string">
+  Optional note describing the transaction (2–200 characters).
+</ParamField>
+
+<ParamField body="paymentMethod" type="string" required>
+  Payment channel, e.g. `mobile_money` or `cash`.
+</ParamField>
+
+<ParamField body="idempotency_key" type="string">
+  A unique string (max 100 characters) you generate per request. Enables safe retries without creating duplicate transactions.
+</ParamField>
+
+### Response
+
+Returns the created `TransactionEntity` with `status: "PENDING"`.
+
+<ResponseField name="id" type="string" required>
+  Unique identifier for the newly created transaction.
+</ResponseField>
+<ResponseField name="member_id" type="string" required>
+  ID of the member this transaction was created for.
+</ResponseField>
+<ResponseField name="type" type="string" required>
+  The transaction type as submitted.
+</ResponseField>
+<ResponseField name="amount" type="number" required>
+  The transaction amount as submitted.
+</ResponseField>
+<ResponseField name="description" type="string">
+  The description as submitted, if provided.
+</ResponseField>
+<ResponseField name="payment_method" type="string">
+  The payment method as submitted.
+</ResponseField>
+<ResponseField name="status" type="string" required>
+  Always `PENDING` on creation.
+</ResponseField>
+<ResponseField name="date" type="string" required>
+  ISO 8601 datetime when the transaction was created.
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Record a contribution
+curl --request POST \
+  --url "https://api.saveapp.example/api/transactions" \
+  --header "Authorization: Bearer <token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "memberName": "Jane Nakato",
+    "type": "CONTRIBUTION",
+    "amount": 50000,
+    "description": "October contribution",
+    "paymentMethod": "mobile_money",
+    "idempotency_key": "contrib-jane-oct-2024"
+  }'
+```
+
+```bash Record a loan repayment
+curl --request POST \
+  --url "https://api.saveapp.example/api/transactions" \
+  --header "Authorization: Bearer <token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "memberName": "David Ssemakula",
+    "type": "LOAN_REPAYMENT",
+    "amount": 25000,
+    "paymentMethod": "cash"
+  }'
+```
+
+</CodeGroup>
+
+---
+
+## Approve a transaction
+
+Approve a pending transaction. This endpoint requires admin privileges. The system uses **unanimous approval** — a transaction is only executed once every active admin has called this endpoint for it.
+
+**`POST /api/transactions/{id}/approve`**
+
+When unanimous approval is reached, the following side effects occur automatically:
+
+- **`CONTRIBUTION`** — the group balance is credited and the member's `contribution_paid` total is increased. The member's credit score is then updated: an on-time payment (before the active cycle's `contribution_due_date`) awards positive points; a late payment deducts points.
+- **`PAYOUT`** — the group balance is debited.
+- **`LOAN_REPAYMENT`** — the group balance is credited.
+- **`PENALTY`** — the group balance is credited and the member's `shortfall_amount` is increased.
+
+A push notification is sent to the member when their transaction is fully approved.
+
+### Path parameters
+
+<ParamField path="id" type="string" required>
+  The UUID of the transaction to approve.
+</ParamField>
+
+### Request body
+
+<ParamField body="adminEmail" type="string" required>
+  Email address of the admin submitting this approval (2–100 characters).
+</ParamField>
+
+<ParamField body="txId" type="string">
+  Optional external transaction reference ID.
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean" required>
+  `true` when the approval was recorded successfully.
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  Either `"Transaction approved and executed successfully"` (when unanimous approval is reached) or `"Approval recorded. Waiting for other admins to approve."` (when more approvals are still needed).
+</ResponseField>
+
+### Example
+
+<CodeGroup>
+
+```bash Approve a transaction
+curl --request POST \
+  --url "https://api.saveapp.example/api/transactions/txn_a1b2c3d4/approve" \
+  --header "Authorization: Bearer <token>" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "adminEmail": "admin@savegroup.ug"
+  }'
+```
+
+</CodeGroup>

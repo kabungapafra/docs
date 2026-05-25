@@ -1,0 +1,131 @@
+---
+title: "Save App Login: Phone PIN and Firebase Auth Endpoints"
+sidebarTitle: "Login"
+description: "Log in to Save App with your Uganda phone number and 4-digit PIN, or authenticate via a Firebase ID token for Google-verified accounts."
+---
+
+The Save App authentication API supports two login methods: a phone number and PIN combination for standard accounts, and a Firebase ID token for accounts verified through Google's phone authentication service. Both methods return a JWT bearer token valid for 24 hours that you include in all subsequent authenticated requests.
+
+## POST /api/auth/login
+
+Authenticates a user with a phone number and 4-digit PIN. Optionally accepts a `groupName` to prevent cross-group access and a `loginType` to restrict portal access by role.
+
+### Request body
+
+<ParamField body="phone" type="string" required>
+  The user's phone number in Uganda format. Must match the pattern `+256XXXXXXXXX` (country code followed by 9 digits).
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  The user's 4-digit numeric PIN. Must be exactly 4 digits (e.g., `"1234"`). No letters or special characters are accepted.
+</ParamField>
+
+<ParamField body="groupName" type="string">
+  The name of the group to log into. When provided, the server verifies that the user belongs to this group. Use this to prevent a user from one group accidentally or maliciously accessing another group's portal.
+</ParamField>
+
+<ParamField body="loginType" type="string">
+  Restricts login to a specific portal type. Accepted values are `"admin"` or `"member"`. Passing `"admin"` blocks non-admin users from reaching the admin portal.
+</ParamField>
+
+### Response
+
+<ResponseField name="token" type="string" required>
+  A signed JWT bearer token. Include this value in the `Authorization` header as `Bearer <token>` on all subsequent authenticated requests. The token is valid for 24 hours.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  The user's display name as stored in their account.
+</ResponseField>
+
+<ResponseField name="role" type="string" required>
+  The user's role in the group. Either `"admin"` or `"member"`.
+</ResponseField>
+
+<ResponseField name="is_creator" type="boolean" required>
+  `true` if this user created the group, `false` otherwise. Group creators may have elevated permissions within admin interfaces.
+</ResponseField>
+
+### Error responses
+
+| Status | Condition |
+|--------|-----------|
+| `401 Unauthorized` | Phone number not found, password does not match, or the account uses Google sign-in and cannot accept a PIN. |
+| `403 Forbidden` | Account is inactive, the user belongs to a different group than `groupName`, or a non-admin attempted to log in with `loginType: "admin"`. |
+
+---
+
+## POST /api/auth/firebase-login
+
+Authenticates a user using a Firebase ID token obtained from Firebase Phone Authentication on the client. If the phone number in the decoded token does not yet have an account in the specified group, a new member account is created automatically.
+
+<Note>
+  This endpoint is rate-limited to **10 requests per minute**. Implement exponential back-off on your client when retrying after a `429` response.
+</Note>
+
+### Request body
+
+<ParamField body="idToken" type="string" required>
+  The Firebase ID token issued by Firebase Authentication after the client completes phone verification. Obtain this token client-side using the Firebase SDK.
+</ParamField>
+
+<ParamField body="group_name" type="string" required>
+  The name of the group the user is logging into. Must be between 2 and 100 characters. If the phone number is new, the account is created under this group.
+</ParamField>
+
+### Response
+
+Returns the same `LoginResponse` shape as `POST /api/auth/login`.
+
+### Error responses
+
+| Status | Condition |
+|--------|-----------|
+| `400 Bad Request` | The Firebase token does not contain a phone number. |
+| `401 Unauthorized` | The Firebase ID token is invalid or expired. |
+| `403 Forbidden` | The phone number is already registered under a different group than `group_name`, or the account is inactive. |
+
+---
+
+## Examples
+
+<CodeGroup>
+
+```bash Phone/PIN login
+curl --request POST \
+  --url https://api.saveapp.co/api/auth/login \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "phone": "+256700123456",
+    "password": "1234",
+    "groupName": "Kampala Savers",
+    "loginType": "member"
+  }'
+```
+
+```bash Firebase login
+curl --request POST \
+  --url https://api.saveapp.co/api/auth/firebase-login \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "idToken": "eyJhbGciOiJSUzI1NiIsImtpZCI6...",
+    "group_name": "Kampala Savers"
+  }'
+```
+
+</CodeGroup>
+
+**Successful response (both endpoints)**
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "name": "Aisha Nakato",
+  "role": "member",
+  "is_creator": false
+}
+```
+
+<Warning>
+  Accounts managed by Firebase (i.e., created via `firebase-login`) cannot be used with the phone/PIN login endpoint. Attempting to do so returns `401 Unauthorized` with the message "This account is managed by Google. Please sign in with Google."
+</Warning>

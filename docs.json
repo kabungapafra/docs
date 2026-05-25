@@ -1,0 +1,93 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "Save App",
+  "theme": "luma",
+  "favicon": "https://media.brand.dev/d9eec136-1b58-4560-8c2a-e122eba9a857.jpg",
+  "colors": {
+    "primary": "#0c64c4",
+    "light": "#84b4dc"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/kabungapafra/Saveapp-Backend"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "authentication"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/groups",
+              "concepts/cycles",
+              "concepts/credit-scores"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/managing-members",
+              "guides/loans",
+              "guides/transactions",
+              "guides/payouts"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Auth",
+            "pages": [
+              "api/auth/login",
+              "api/auth/register",
+              "api/auth/password"
+            ]
+          },
+          {
+            "group": "Members",
+            "pages": [
+              "api/members/list",
+              "api/members/create",
+              "api/members/update"
+            ]
+          },
+          {
+            "group": "Loans",
+            "pages": [
+              "api/loans/overview",
+              "api/loans/eligibility",
+              "api/loans/repayment"
+            ]
+          },
+          {
+            "group": "Transactions & Payouts",
+            "pages": [
+              "api/transactions/overview",
+              "api/payouts/overview"
+            ]
+          },
+          {
+            "group": "Analytics & Config",
+            "pages": [
+              "api/analytics/dashboard",
+              "api/config/settings"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

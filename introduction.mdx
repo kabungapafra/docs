@@ -1,0 +1,41 @@
+---
+title: "Save App API: Group Savings, Loans, and Payout Management"
+description: "Save App is a REST API for managing savings circles (chamas). Build mobile apps that handle contributions, loans, payouts, credit scores, and savings cycles."
+---
+
+Save App is a backend API for savings circles — known in East Africa as chamas — where members pool money regularly, take loans against their savings, and receive rotating payouts. The API handles the full lifecycle of a savings group: registering admins and members, recording and approving contributions, processing loan requests, tracking credit scores, managing payout queues, and running multi-cycle savings programs.
+
+## What you can build
+
+Save App gives your mobile application everything needed to run a savings group end-to-end:
+
+- **Member management** — register group admins and members, manage roles (admin/member), suspend or reactivate accounts, and track onboarding status
+- **Contributions and transactions** — record member contributions, submit transactions for admin approval, and view the full transaction history
+- **Loan management** — submit loan requests, check eligibility (up to 3× a member's total contributions), approve or reject requests as an admin, and record repayments with a 5% annual interest rate
+- **Payout system** — manage a payout queue ordered by credit scores, execute payouts, and defer remaining funds across cycles
+- **Credit scores** — track each member's reliability based on on-time payments, missed contributions, and loan repayment history (score range: 300–850)
+- **Savings cycles** — structure the group's activity into discrete periods with contribution due dates, cycle numbers, and end-of-cycle payout execution
+- **Analytics dashboard** — retrieve group-level summaries including total balance, active member count, pending approvals, and monthly contribution totals
+
+## Who this API is for
+
+The Save App API is designed for:
+
+- **Mobile app developers** building a client application (iOS or Android) on top of the Save App backend
+- **Integration partners** connecting Save App to external payment systems, SMS providers, or financial reporting tools
+- **Group admins** using developer tooling to automate reporting or bulk operations for their savings group
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Register a group, log in, add a member, and fetch your dashboard in four API calls.
+  </Card>
+  <Card title="Authentication" icon="lock" href="/authentication">
+    Learn how to obtain a JWT token and authenticate every request.
+  </Card>
+  <Card title="API reference" icon="code" href="/api/auth/login">
+    Browse every endpoint with full request and response schemas.
+  </Card>
+  <Card title="Guides" icon="book-open" href="/guides/managing-members">
+    Step-by-step walkthroughs for members, loans, transactions, and payouts.
+  </Card>
+</CardGroup>
