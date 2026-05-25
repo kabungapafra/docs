@@ -6,6 +6,7 @@
   "logo": {
     "light": "/logo-light.png",
     "dark": "/logo-dark.png"
+    "size": "large" 
   },
   "colors": {
     "primary": "#0c64c4",
