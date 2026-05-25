@@ -6,12 +6,7 @@
   "colors": {
     "primary": "#0c64c4",
     "light": "#84b4dc"
-  },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/kabungapafra/Saveapp-Backend"
-    }
+
   },
   "navigation": {
     "tabs": [
